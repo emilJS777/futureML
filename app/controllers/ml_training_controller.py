@@ -4,7 +4,7 @@ from fastapi import APIRouter, Form, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from app.core.ml_training_runner import start_ml_training_runner, stop_ml_training_runner
+from app.core.ml_training_runner import capture_once_debug, start_ml_training_runner, stop_ml_training_runner
 from app.services.ml_labeling_service import process_pending_labels
 from app.services.ml_stats_service import get_ml_training_stats
 from app.services.ml_training_service import train_basic_direction_model
@@ -48,6 +48,20 @@ async def stop_ml_training():
 def process_labels():
     result = process_pending_labels()
     return _redirect_with_message("success", f"Processed {result['processed']} labels; skipped {result['skipped']}.")
+
+
+@router.post("/ml-training/capture-once")
+async def capture_once():
+    result = await capture_once_debug()
+    message = (
+        f"Capture once: active pairs {result['total_active_pairs_found']}, "
+        f"attempted {len(result['attempted_exchanges'])}, "
+        f"success {result['success_count']}, failed {result['failed_count']}, "
+        f"created snapshots {result['created_snapshots_count']}."
+    )
+    if result["error_messages"]:
+        message = f"{message} Errors: {'; '.join(result['error_messages'])}"
+    return _redirect_with_message("success" if result["success_count"] else "danger", message)
 
 
 @router.post("/ml-training/train-basic-model")

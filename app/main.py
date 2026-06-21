@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.market_data_collector import market_data_collection_loop
+from app.core.ml_training_runner import restart_running_ml_training_session
 from app.core.startup import run_startup_database_tasks
 from app.controllers.exchange_controller import router as exchange_router
 from app.controllers.market_data_controller import router as market_data_router
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
             collector_task = asyncio.create_task(market_data_collection_loop())
         else:
             logger.info("Market data auto-collector is disabled.")
+        await restart_running_ml_training_session()
     except Exception:
         logger.exception("Startup database tasks failed.")
         raise

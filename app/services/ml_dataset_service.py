@@ -296,12 +296,20 @@ def _cross_exchange_features(db: Session, exchange_code: str, symbol: str, mid_p
 
 def collect_ml_snapshot_for_exchange(exchange_credential_id: int, session_id: int | None) -> dict[str, object]:
     db = SessionLocal()
+    exchange_label = f"credential_id={exchange_credential_id}"
     try:
         settings = get_settings()
         capture_started_at = datetime.now(UTC)
         credential = db.get(ExchangeCredential, exchange_credential_id)
         if credential is None:
-            return {"success": False, "message": "Exchange credential not found."}
+            message = "Exchange credential not found."
+            logger.error("ML capture skipped: %s %s.", exchange_label, message)
+            return {"success": False, "message": message, "exchange_credential_id": exchange_credential_id}
+        exchange_label = f"{credential.exchange_code} credential_id={credential.id}"
+        if not credential.is_active:
+            message = "Exchange credential inactive."
+            logger.warning("ML capture skipped for %s: %s", exchange_label, message)
+            return {"success": False, "message": message, "exchange_credential_id": credential.id}
         market = db.scalar(
             select(ExchangeMarket).where(
                 ExchangeMarket.exchange_credential_id == credential.id,
@@ -310,11 +318,22 @@ def collect_ml_snapshot_for_exchange(exchange_credential_id: int, session_id: in
             )
         )
         if market is None:
-            return {"success": False, "message": "No active selected pair."}
+            message = "Selected market missing or inactive."
+            logger.warning("ML capture skipped for %s: %s", exchange_label, message)
+            return {"success": False, "message": message, "exchange_credential_id": credential.id}
 
+        logger.info("ML capture start for %s symbol=%s session_id=%s.", exchange_label, market.symbol, session_id)
         exchange = build_ccxt_exchange(credential)
         if not _has(exchange, "fetchOrderBook"):
-            return {"success": False, "message": "Exchange does not support order book fetch."}
+            message = "fetch_order_book unsupported."
+            logger.warning("ML capture failed for %s symbol=%s: %s", exchange_label, market.symbol, message)
+            return {
+                "success": False,
+                "message": message,
+                "exchange_credential_id": credential.id,
+                "exchange_code": credential.exchange_code,
+                "symbol": market.symbol,
+            }
 
         order_book = exchange.fetch_order_book(market.symbol, limit=50)
         ticker = None
@@ -362,6 +381,9 @@ def collect_ml_snapshot_for_exchange(exchange_credential_id: int, session_id: in
         funding_rate = _extract_market_price(funding, "fundingRate")
         book_features = calculate_order_book_features(order_book)
         trade_features = calculate_trade_features(trades or [])
+        snapshot_trade_features = {
+            key: value for key, value in trade_features.items() if key != "trades_count"
+        }
         candle_features = calculate_candle_features(candles or [])
         cross_features = _cross_exchange_features(db, credential.exchange_code, market.symbol, mid_price)
         previous_snapshot = db.scalar(
@@ -466,7 +488,7 @@ def collect_ml_snapshot_for_exchange(exchange_credential_id: int, session_id: in
                 }
             ),
             **book_features,
-            **trade_features,
+            **snapshot_trade_features,
             **candle_features,
             **dynamic_features,
             **cross_features,
@@ -481,10 +503,30 @@ def collect_ml_snapshot_for_exchange(exchange_credential_id: int, session_id: in
 
         db.commit()
         db.refresh(snapshot)
-        return {"success": True, "message": "ML feature snapshot collected.", "snapshot_id": snapshot.id}
+        logger.info(
+            "ML capture success for %s symbol=%s snapshot_id=%s labels=%s.",
+            exchange_label,
+            market.symbol,
+            snapshot.id,
+            len(horizons),
+        )
+        return {
+            "success": True,
+            "message": "ML feature snapshot collected.",
+            "exchange_credential_id": credential.id,
+            "exchange_code": credential.exchange_code,
+            "symbol": market.symbol,
+            "snapshot_id": snapshot.id,
+            "created_snapshots_count": 1,
+            "created_labels_count": len(horizons),
+        }
     except Exception as exc:
-        logger.exception("ML snapshot collection failed for exchange credential %s.", exchange_credential_id)
-        return {"success": False, "message": str(exc)[:1000] or exc.__class__.__name__}
+        logger.exception("ML snapshot collection failed for %s.", exchange_label)
+        return {
+            "success": False,
+            "message": str(exc)[:1000] or exc.__class__.__name__,
+            "exchange_credential_id": exchange_credential_id,
+        }
     finally:
         db.close()
 
@@ -492,7 +534,9 @@ def collect_ml_snapshot_for_exchange(exchange_credential_id: int, session_id: in
 def collect_ml_snapshot_for_all_active_pairs(session_id: int | None) -> list[dict[str, object]]:
     db = SessionLocal()
     try:
-        credential_ids = [credential.id for credential, _market in _active_pairs(db)]
+        pairs = _active_pairs(db)
+        credential_ids = [credential.id for credential, _market in pairs]
+        logger.info("ML capture all active pairs: session_id=%s active_pairs=%s.", session_id, len(pairs))
     finally:
         db.close()
 
@@ -500,3 +544,44 @@ def collect_ml_snapshot_for_all_active_pairs(session_id: int | None) -> list[dic
     for credential_id in credential_ids:
         results.append(collect_ml_snapshot_for_exchange(credential_id, session_id))
     return results
+
+
+def capture_ml_snapshot_debug(session_id: int | None) -> dict[str, object]:
+    db = SessionLocal()
+    try:
+        active_pairs = _active_pairs(db)
+        active_pair_count = len(active_pairs)
+        attempted = [
+            {
+                "exchange_credential_id": credential.id,
+                "exchange_code": credential.exchange_code,
+                "symbol": market.symbol,
+            }
+            for credential, market in active_pairs
+        ]
+    finally:
+        db.close()
+
+    if active_pair_count == 0:
+        return {
+            "total_active_pairs_found": 0,
+            "attempted_exchanges": [],
+            "success_count": 0,
+            "failed_count": 0,
+            "error_messages": ["no active pairs"],
+            "created_snapshots_count": 0,
+            "results": [],
+        }
+
+    results = collect_ml_snapshot_for_all_active_pairs(session_id)
+    success_count = sum(1 for result in results if result.get("success"))
+    failed_results = [result for result in results if not result.get("success")]
+    return {
+        "total_active_pairs_found": active_pair_count,
+        "attempted_exchanges": attempted,
+        "success_count": success_count,
+        "failed_count": len(failed_results),
+        "error_messages": [str(result.get("message")) for result in failed_results],
+        "created_snapshots_count": sum(int(result.get("created_snapshots_count", 0)) for result in results),
+        "results": results,
+    }

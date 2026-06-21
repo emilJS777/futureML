@@ -31,6 +31,9 @@
       <form method="post" action="/ml-training/process-labels">
         <button class="btn btn-warning" type="submit">Process Labels</button>
       </form>
+      <form method="post" action="/ml-training/capture-once">
+        <button class="btn btn-outline-light" type="submit">Capture Once Debug</button>
+      </form>
       <form method="post" action="/ml-training/train-basic-model" class="inline-form">
         <label class="form-label" for="horizon_seconds">Horizon</label>
         <select class="form-select short-input" id="horizon_seconds" name="horizon_seconds">
@@ -49,6 +52,11 @@
         <div><dt>Interval</dt><dd>{{ stats.active_session.interval_seconds }}s</dd></div>
         <div><dt>Horizons</dt><dd>{{ stats.active_session.label_horizons_json }}</dd></div>
       </dl>
+    {% endif %}
+    {% if stats.last_runner_error %}
+      <div class="alert alert-danger mt-4">
+        <strong>Last runner error:</strong> {{ stats.last_runner_error }}
+      </div>
     {% endif %}
   </section>
 

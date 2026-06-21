@@ -51,6 +51,12 @@ def get_ml_training_stats() -> dict:
             .order_by(MlTrainingSession.started_at.desc())
             .limit(1)
         )
+        last_error_session = db.scalar(
+            select(MlTrainingSession)
+            .where(MlTrainingSession.error_message.is_not(None))
+            .order_by(MlTrainingSession.updated_at.desc())
+            .limit(1)
+        )
         active_pairs = list(
             db.execute(
                 select(ExchangeCredential, ExchangeMarket)
@@ -97,6 +103,11 @@ def get_ml_training_stats() -> dict:
             "latest_capture_latency_ms": latest_capture_latency_ms,
             "latest_missing_fields_count": latest_missing_fields_count,
             "active_session": active_session,
+            "last_runner_error": active_session.error_message
+            if active_session and active_session.error_message
+            else last_error_session.error_message
+            if last_error_session
+            else None,
             "active_pairs": active_pairs,
             "snapshots_per_exchange": snapshots_per_exchange,
             "snapshots_per_symbol": snapshots_per_symbol,
