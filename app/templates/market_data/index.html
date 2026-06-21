@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Market Data | FuturesML{% endblock %}
+{% block heading %}Market Data{% endblock %}
+{% block actions %}
+  <form method="post" action="/market-data/capture-all">
+    <button class="btn btn-primary" type="submit">Capture All</button>
+  </form>
+{% endblock %}
+{% block content %}
+  {% if message %}
+    <div class="alert alert-{{ status or 'info' }}">{{ message }}</div>
+  {% endif %}
+
+  {% if rows %}
+    <section class="panel wide-panel">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle data-table">
+          <thead>
+            <tr>
+              <th>Exchange</th>
+              <th>Code</th>
+              <th>Selected symbol</th>
+              <th>Status</th>
+              <th>Best bid</th>
+              <th>Best ask</th>
+              <th>Spread</th>
+              <th>Spread %</th>
+              <th>Mid</th>
+              <th>Last</th>
+              <th>Funding</th>
+              <th>Open interest</th>
+              <th>Last captured</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              {% set credential = row.credential %}
+              {% set market = row.market %}
+              {% set snapshot = row.snapshot %}
+              <tr>
+                <td>{{ credential.title }}</td>
+                <td>{{ credential.exchange_code }}</td>
+                <td>{{ market.symbol }}</td>
+                <td>
+                  <span class="badge text-bg-{{ 'success' if market.is_active else 'secondary' }}">{{ 'active' if market.is_active else 'inactive' }}</span>
+                </td>
+                <td>{{ snapshot.best_bid if snapshot and snapshot.best_bid is not none else '-' }}</td>
+                <td>{{ snapshot.best_ask if snapshot and snapshot.best_ask is not none else '-' }}</td>
+                <td>{{ snapshot.spread if snapshot and snapshot.spread is not none else '-' }}</td>
+                <td>{{ snapshot.spread_percent if snapshot and snapshot.spread_percent is not none else '-' }}</td>
+                <td>{{ snapshot.mid_price if snapshot and snapshot.mid_price is not none else '-' }}</td>
+                <td>{{ snapshot.last_price if snapshot and snapshot.last_price is not none else '-' }}</td>
+                <td>{{ snapshot.funding_rate if snapshot and snapshot.funding_rate is not none else '-' }}</td>
+                <td>{{ snapshot.open_interest if snapshot and snapshot.open_interest is not none else '-' }}</td>
+                <td>{{ snapshot.captured_at if snapshot else 'No snapshots yet' }}</td>
+                <td>
+                  <div class="card-actions compact">
+                    <form method="post" action="/market-data/{{ credential.public_id }}/capture">
+                      <button class="btn btn-sm btn-warning" type="submit">Capture Now</button>
+                    </form>
+                    <a class="btn btn-sm btn-outline-light" href="/market-data/{{ credential.public_id }}/snapshots">View Snapshots</a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% elif has_exchanges %}
+    <section class="empty-state">
+      <h2>No active pairs selected</h2>
+      <p>Sync futures markets from an exchange detail page, then choose one active data pair for collection.</p>
+      <a class="btn btn-primary" href="/exchanges">Go to exchanges</a>
+    </section>
+  {% else %}
+    <section class="empty-state">
+      <h2>No exchanges connected</h2>
+      <p>Add an exchange credential before syncing futures markets or collecting snapshots.</p>
+      <a class="btn btn-primary" href="/exchanges/create">Add exchange</a>
+    </section>
+  {% endif %}
+{% endblock %}

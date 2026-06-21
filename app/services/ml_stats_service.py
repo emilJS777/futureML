@@ -1,0 +1,107 @@
+from sqlalchemy import func, select
+
+from app.core.database import SessionLocal
+from app.models.exchange_credential import ExchangeCredential
+from app.models.exchange_market import ExchangeMarket
+from app.models.market_micro_candle import MarketMicroCandle
+from app.models.market_recent_trades_snapshot import MarketRecentTradesSnapshot
+from app.models.ml_feature_snapshot import MlFeatureSnapshot
+from app.models.ml_model import MlModel
+from app.models.ml_snapshot_label import MlSnapshotLabel
+from app.models.ml_training_session import MlTrainingSession
+
+
+def get_ml_training_stats() -> dict:
+    db = SessionLocal()
+    try:
+        total_snapshots = db.scalar(select(func.count()).select_from(MlFeatureSnapshot)) or 0
+        total_labels = db.scalar(select(func.count()).select_from(MlSnapshotLabel)) or 0
+        pending_labels = db.scalar(
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(False))
+        ) or 0
+        labeled_labels = db.scalar(
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(True))
+        ) or 0
+        long_count = db.scalar(
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.direction_label == "long")
+        ) or 0
+        short_count = db.scalar(
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.direction_label == "short")
+        ) or 0
+        flat_count = db.scalar(
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.direction_label == "flat")
+        ) or 0
+        latest_captured_at = db.scalar(select(func.max(MlFeatureSnapshot.captured_at)))
+        recent_trades_count = db.scalar(select(func.count()).select_from(MarketRecentTradesSnapshot)) or 0
+        micro_candles_count = db.scalar(select(func.count()).select_from(MarketMicroCandle)) or 0
+        average_data_quality_score = db.scalar(select(func.avg(MlFeatureSnapshot.data_quality_score)))
+        latest_capture_latency_ms = db.scalar(
+            select(MlFeatureSnapshot.capture_latency_ms)
+            .order_by(MlFeatureSnapshot.captured_at.desc())
+            .limit(1)
+        )
+        latest_missing_fields_count = db.scalar(
+            select(MlFeatureSnapshot.missing_fields_count)
+            .order_by(MlFeatureSnapshot.captured_at.desc())
+            .limit(1)
+        )
+        active_session = db.scalar(
+            select(MlTrainingSession)
+            .where(MlTrainingSession.status == "running")
+            .order_by(MlTrainingSession.started_at.desc())
+            .limit(1)
+        )
+        active_pairs = list(
+            db.execute(
+                select(ExchangeCredential, ExchangeMarket)
+                .join(ExchangeMarket, ExchangeMarket.exchange_credential_id == ExchangeCredential.id)
+                .where(
+                    ExchangeCredential.is_active.is_(True),
+                    ExchangeMarket.is_active.is_(True),
+                    ExchangeMarket.is_selected_for_data_collection.is_(True),
+                )
+                .order_by(ExchangeCredential.title, ExchangeMarket.symbol)
+            )
+        )
+        snapshots_per_exchange = list(
+            db.execute(
+                select(MlFeatureSnapshot.exchange_code, func.count(MlFeatureSnapshot.id))
+                .group_by(MlFeatureSnapshot.exchange_code)
+                .order_by(MlFeatureSnapshot.exchange_code)
+            )
+        )
+        snapshots_per_symbol = list(
+            db.execute(
+                select(MlFeatureSnapshot.symbol, func.count(MlFeatureSnapshot.id))
+                .group_by(MlFeatureSnapshot.symbol)
+                .order_by(MlFeatureSnapshot.symbol)
+            )
+        )
+        models = list(db.scalars(select(MlModel).order_by(MlModel.trained_at.desc()).limit(20)))
+        latest_feature_snapshots = list(
+            db.scalars(select(MlFeatureSnapshot).order_by(MlFeatureSnapshot.captured_at.desc()).limit(20))
+        )
+
+        return {
+            "total_snapshots": total_snapshots,
+            "total_labels": total_labels,
+            "pending_labels": pending_labels,
+            "labeled_labels": labeled_labels,
+            "long_count": long_count,
+            "short_count": short_count,
+            "flat_count": flat_count,
+            "latest_captured_at": latest_captured_at,
+            "recent_trades_count": recent_trades_count,
+            "micro_candles_count": micro_candles_count,
+            "average_data_quality_score": average_data_quality_score,
+            "latest_capture_latency_ms": latest_capture_latency_ms,
+            "latest_missing_fields_count": latest_missing_fields_count,
+            "active_session": active_session,
+            "active_pairs": active_pairs,
+            "snapshots_per_exchange": snapshots_per_exchange,
+            "snapshots_per_symbol": snapshots_per_symbol,
+            "models": models,
+            "latest_feature_snapshots": latest_feature_snapshots,
+        }
+    finally:
+        db.close()

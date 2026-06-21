@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Snapshots | FuturesML{% endblock %}
+{% block heading %}Snapshots{% endblock %}
+{% block actions %}
+  <a class="btn btn-outline-light" href="/market-data">Back to Market Data</a>
+{% endblock %}
+{% block content %}
+  <section class="panel wide-panel">
+    <div class="section-heading">
+      <div>
+        <h2>{{ credential.title }}</h2>
+        <div class="muted">{{ selected_market.symbol if selected_market else 'No selected symbol' }}</div>
+      </div>
+      <form method="post" action="/market-data/{{ credential.public_id }}/capture">
+        <button class="btn btn-warning" type="submit">Capture Now</button>
+      </form>
+    </div>
+
+    {% if snapshots %}
+      <div class="table-responsive mt-4">
+        <table class="table table-dark table-hover align-middle data-table">
+          <thead>
+            <tr>
+              <th>Captured</th>
+              <th>Symbol</th>
+              <th>Best bid</th>
+              <th>Best ask</th>
+              <th>Spread</th>
+              <th>Spread %</th>
+              <th>Mid</th>
+              <th>Last</th>
+              <th>Mark</th>
+              <th>Index</th>
+              <th>Funding</th>
+              <th>Open interest</th>
+              <th>24h volume</th>
+              <th>Quote volume</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for snapshot in snapshots %}
+              <tr>
+                <td>{{ snapshot.captured_at }}</td>
+                <td>{{ snapshot.symbol }}</td>
+                <td>{{ snapshot.best_bid if snapshot.best_bid is not none else '-' }}</td>
+                <td>{{ snapshot.best_ask if snapshot.best_ask is not none else '-' }}</td>
+                <td>{{ snapshot.spread if snapshot.spread is not none else '-' }}</td>
+                <td>{{ snapshot.spread_percent if snapshot.spread_percent is not none else '-' }}</td>
+                <td>{{ snapshot.mid_price if snapshot.mid_price is not none else '-' }}</td>
+                <td>{{ snapshot.last_price if snapshot.last_price is not none else '-' }}</td>
+                <td>{{ snapshot.mark_price if snapshot.mark_price is not none else '-' }}</td>
+                <td>{{ snapshot.index_price if snapshot.index_price is not none else '-' }}</td>
+                <td>{{ snapshot.funding_rate if snapshot.funding_rate is not none else '-' }}</td>
+                <td>{{ snapshot.open_interest if snapshot.open_interest is not none else '-' }}</td>
+                <td>{{ snapshot.volume_24h if snapshot.volume_24h is not none else '-' }}</td>
+                <td>{{ snapshot.quote_volume_24h if snapshot.quote_volume_24h is not none else '-' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-actions">
+        {% if page > 1 %}
+          <a class="btn btn-outline-light" href="/market-data/{{ credential.public_id }}/snapshots?page={{ page - 1 }}">Previous</a>
+        {% endif %}
+        {% if snapshots|length == 50 %}
+          <a class="btn btn-outline-light" href="/market-data/{{ credential.public_id }}/snapshots?page={{ page + 1 }}">Next</a>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="empty-state embedded">
+        <h2>No snapshots yet</h2>
+        <p>Capture market data to store order books, prices, funding, and open interest for this pair.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

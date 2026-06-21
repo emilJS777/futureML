@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Exchanges | FuturesML{% endblock %}
+{% block heading %}Exchange Credentials{% endblock %}
+{% block actions %}
+  <a class="btn btn-primary" href="/exchanges/create">Add exchange</a>
+{% endblock %}
+{% block content %}
+  {% if credentials %}
+    <div class="exchange-grid">
+      {% for item in credentials %}
+        <section class="exchange-card">
+          <div class="exchange-card-head">
+            <img class="exchange-icon" src="{{ item.icon_path or '/static/css/exchange-placeholder.svg' }}" alt="">
+            <div>
+              <h2>{{ item.title }}</h2>
+              <div class="muted">{{ item.exchange_code }} · index {{ item.sort_index }}</div>
+            </div>
+          </div>
+          <div class="badge-row">
+            <span class="badge text-bg-{{ 'success' if item.is_active else 'secondary' }}">{{ 'Active' if item.is_active else 'Inactive' }}</span>
+            <span class="badge text-bg-{{ 'info' if item.is_futures_enabled else 'secondary' }}">{{ 'Futures enabled' if item.is_futures_enabled else 'Spot only' }}</span>
+            {% if item.last_test_status %}
+              <span class="badge text-bg-{{ 'success' if item.last_test_status == 'success' else 'danger' }}">{{ item.last_test_status }}</span>
+            {% endif %}
+          </div>
+          <dl class="details-list">
+            <div><dt>API key</dt><dd>{{ item|masked_api_key }}</dd></div>
+            <div><dt>Last test</dt><dd>{{ item.last_test_message or 'Not tested yet' }}</dd></div>
+          </dl>
+          <div class="card-actions">
+            <a class="btn btn-sm btn-outline-light" href="/exchanges/{{ item.public_id }}">Details</a>
+            <a class="btn btn-sm btn-outline-light" href="/exchanges/{{ item.public_id }}/edit">Edit</a>
+            <form method="post" action="/exchanges/{{ item.public_id }}/test">
+              <button class="btn btn-sm btn-warning" type="submit">Test Connection</button>
+            </form>
+            <form method="post" action="/exchanges/{{ item.public_id }}/delete" onsubmit="return confirm('Delete this credential?');">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  {% else %}
+    <section class="empty-state">
+      <h2>No exchanges connected</h2>
+      <p>Add encrypted API credentials and test whether CCXT can load futures or swap markets.</p>
+      <a class="btn btn-primary" href="/exchanges/create">Add your first exchange</a>
+    </section>
+  {% endif %}
+{% endblock %}

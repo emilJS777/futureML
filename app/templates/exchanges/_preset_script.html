@@ -1,0 +1,19 @@
+<script>
+  const presets = {{ presets_json | tojson }};
+  const presetSelect = document.getElementById("preset");
+  const fields = {
+    title: document.getElementById("title"),
+    exchange_code: document.getElementById("exchange_code"),
+    icon_path: document.getElementById("icon_path"),
+    sort_index: document.getElementById("sort_index")
+  };
+
+  presetSelect?.addEventListener("change", (event) => {
+    const preset = presets.find((item) => item.exchange_code === event.target.value);
+    if (!preset) return;
+    fields.title.value = preset.title;
+    fields.exchange_code.value = preset.exchange_code;
+    fields.icon_path.value = preset.default_icon_path || "";
+    fields.sort_index.value = preset.index;
+  });
+</script>

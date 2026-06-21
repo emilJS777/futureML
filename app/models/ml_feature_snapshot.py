@@ -1,0 +1,90 @@
+import uuid
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Numeric, String, func
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.database import Base
+
+
+class MlFeatureSnapshot(Base):
+    __tablename__ = "ml_feature_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    public_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), unique=True, index=True, nullable=False, default=uuid.uuid4
+    )
+    training_session_id: Mapped[int | None] = mapped_column(ForeignKey("ml_training_sessions.id"), nullable=True)
+    exchange_credential_id: Mapped[int] = mapped_column(ForeignKey("exchange_credentials.id"), nullable=False)
+    exchange_market_id: Mapped[int] = mapped_column(ForeignKey("exchange_markets.id"), nullable=False)
+    exchange_code: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    best_bid: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    best_ask: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    spread: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    spread_percent: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    mid_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    last_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    mark_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    index_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    funding_rate: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    open_interest: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    volume_24h: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    quote_volume_24h: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    price_change_percent_24h: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    bid_depth_5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    ask_depth_5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    bid_depth_10: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    ask_depth_10: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    bid_depth_20: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    ask_depth_20: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    order_book_imbalance_5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    order_book_imbalance_10: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    order_book_imbalance_20: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    top_bid_size: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    top_ask_size: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    bid_wall_score: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    ask_wall_score: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    buy_volume: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    sell_volume: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    buy_sell_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    buy_sell_ratio: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    avg_trade_size: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    large_trade_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    largest_trade_size: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    bid_depth_5_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    ask_depth_5_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    imbalance_5_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    bid_depth_10_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    ask_depth_10_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    imbalance_10_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    spread_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    mid_price_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    wall_shift_score: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    candle_return_1: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    candle_return_3: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    candle_volume_1: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    candle_volume_avg_5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    candle_momentum_5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    funding_rate_delta: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    funding_rate_abs: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    funding_pressure_score: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    capture_latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    order_book_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ticker_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trades_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    missing_fields_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cross_exchange_mid_avg: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    cross_exchange_mid_median: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    cross_exchange_price_deviation_percent: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    cross_exchange_spread_percent: Mapped[Decimal | None] = mapped_column(Numeric(28, 12), nullable=True)
+    raw_snapshot_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    training_session = relationship("MlTrainingSession")
+    exchange_credential = relationship("ExchangeCredential")
+    exchange_market = relationship("ExchangeMarket")

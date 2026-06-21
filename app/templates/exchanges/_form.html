@@ -1,0 +1,61 @@
+{% set is_edit = credential is defined %}
+<section class="panel">
+  {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+  <form method="post" class="credential-form">
+    <div class="row g-4">
+      <div class="col-12">
+        <label class="form-label" for="preset">Exchange preset</label>
+        <select class="form-select" id="preset">
+          <option value="">Select preset</option>
+          {% for preset in presets %}
+            <option value="{{ preset.exchange_code }}">{{ preset.title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="title">Title</label>
+        <input class="form-control" id="title" name="title" required value="{{ form.title if form is defined and form.title is defined else credential.title if is_edit else '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="exchange_code">Exchange code</label>
+        <input class="form-control" id="exchange_code" name="exchange_code" required value="{{ form.exchange_code if form is defined and form.exchange_code is defined else credential.exchange_code if is_edit else '' }}">
+      </div>
+      <div class="col-md-8">
+        <label class="form-label" for="icon_path">Icon path</label>
+        <input class="form-control" id="icon_path" name="icon_path" value="{{ form.icon_path if form is defined and form.icon_path is defined else credential.icon_path if is_edit else '' }}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label" for="sort_index">Sort index</label>
+        <input class="form-control" id="sort_index" name="sort_index" type="number" value="{{ form.sort_index if form is defined and form.sort_index is defined else credential.sort_index if is_edit else 0 }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="api_key">API key</label>
+        <input class="form-control" id="api_key" name="api_key" {% if not is_edit %}required{% endif %} placeholder="{{ 'Leave empty to keep current key' if is_edit else '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="api_secret">API secret</label>
+        <input class="form-control" id="api_secret" name="api_secret" {% if not is_edit %}required{% endif %} placeholder="{{ 'Leave empty to keep current secret' if is_edit else '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="password">Password / passphrase</label>
+        <input class="form-control" id="password" name="password" placeholder="{{ 'Leave empty to keep current passphrase' if is_edit else 'Optional' }}">
+      </div>
+      <div class="col-md-6 d-flex align-items-end gap-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" id="is_active" name="is_active" type="checkbox" {% if (form.is_active if form is defined and form.is_active is defined else credential.is_active if is_edit else true) %}checked{% endif %}>
+          <label class="form-check-label" for="is_active">Active</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" id="is_futures_enabled" name="is_futures_enabled" type="checkbox" {% if (form.is_futures_enabled if form is defined and form.is_futures_enabled is defined else credential.is_futures_enabled if is_edit else true) %}checked{% endif %}>
+          <label class="form-check-label" for="is_futures_enabled">Futures enabled</label>
+        </div>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">{{ 'Save changes' if is_edit else 'Create exchange' }}</button>
+      <a class="btn btn-outline-light" href="/exchanges">Cancel</a>
+    </div>
+  </form>
+</section>

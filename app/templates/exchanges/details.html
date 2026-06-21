@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ credential.title }} | FuturesML{% endblock %}
+{% block heading %}{{ credential.title }}{% endblock %}
+{% block actions %}
+  <a class="btn btn-outline-light" href="/exchanges/{{ credential.public_id }}/edit">Edit</a>
+{% endblock %}
+{% block content %}
+  {% if message %}
+    <div class="alert alert-{{ status or 'info' }}">{{ message }}</div>
+  {% endif %}
+  <section class="panel">
+    <div class="details-header">
+      <img class="exchange-icon large" src="{{ credential.icon_path or '/static/css/exchange-placeholder.svg' }}" alt="">
+      <div>
+        <h2>{{ credential.exchange_code }}</h2>
+        <div class="muted">Public ID {{ credential.public_id }}</div>
+      </div>
+    </div>
+    <dl class="details-list wide">
+      <div><dt>Sort index</dt><dd>{{ credential.sort_index }}</dd></div>
+      <div><dt>API key</dt><dd>{{ credential|masked_api_key }}</dd></div>
+      <div><dt>Active</dt><dd>{{ 'Yes' if credential.is_active else 'No' }}</dd></div>
+      <div><dt>Futures enabled</dt><dd>{{ 'Yes' if credential.is_futures_enabled else 'No' }}</dd></div>
+      <div><dt>Last test status</dt><dd>{{ credential.last_test_status or 'Not tested' }}</dd></div>
+      <div><dt>Last test message</dt><dd>{{ credential.last_test_message or 'No test has been run.' }}</dd></div>
+      <div><dt>Last tested at</dt><dd>{{ credential.last_tested_at or 'Never' }}</dd></div>
+      <div><dt>Created at</dt><dd>{{ credential.created_at }}</dd></div>
+      <div><dt>Updated at</dt><dd>{{ credential.updated_at }}</dd></div>
+    </dl>
+    <div class="card-actions mt-4">
+      <form method="post" action="/exchanges/{{ credential.public_id }}/test">
+        <button class="btn btn-warning" type="submit">Test Connection</button>
+      </form>
+      <form method="post" action="/exchanges/{{ credential.public_id }}/capture-market-data">
+        <button class="btn btn-primary" type="submit">Capture Market Data</button>
+      </form>
+      <a class="btn btn-outline-light" href="/exchanges">Back</a>
+    </div>
+  </section>
+
+  <section class="panel mt-4">
+    <div class="section-heading">
+      <div>
+        <h2>Futures Markets</h2>
+        <div class="muted">Discover CCXT futures/swap markets and choose one active data pair.</div>
+      </div>
+      <form method="post" action="/exchanges/{{ credential.public_id }}/sync-futures-markets">
+        <button class="btn btn-warning" type="submit">Sync Futures Markets</button>
+      </form>
+    </div>
+
+    {% if markets %}
+      <form class="credential-form" method="post" action="/exchanges/{{ credential.public_id }}/select-market">
+        <div class="row g-4">
+          <div class="col-md-8">
+            <label class="form-label" for="market_public_id">Select Active Data Pair</label>
+            <select class="form-select" id="market_public_id" name="market_public_id" required>
+              {% for market in markets %}
+                <option value="{{ market.public_id }}" {% if selected_market and selected_market.id == market.id %}selected{% endif %}>
+                  {{ market.symbol }}{% if market.market_type %} · {{ market.market_type }}{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-4 d-flex align-items-end">
+            <div class="form-check form-switch">
+              <input class="form-check-input" id="active_for_data_collection" name="active_for_data_collection" type="checkbox" {% if selected_market and selected_market.is_active %}checked{% endif %}>
+              <label class="form-check-label" for="active_for_data_collection">Active for data collection</label>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Save Active Pair</button>
+        </div>
+      </form>
+
+      <div class="table-responsive mt-4">
+        <table class="table table-dark table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Base</th>
+              <th>Quote</th>
+              <th>Settle</th>
+              <th>Type</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for market in markets[:20] %}
+              <tr>
+                <td>{{ market.symbol }}</td>
+                <td>{{ market.base or '-' }}</td>
+                <td>{{ market.quote or '-' }}</td>
+                <td>{{ market.settle or '-' }}</td>
+                <td>
+                  {% if market.is_swap %}<span class="badge text-bg-info">swap</span>{% endif %}
+                  {% if market.is_future %}<span class="badge text-bg-primary">future</span>{% endif %}
+                </td>
+                <td>
+                  {% if market.is_selected_for_data_collection %}
+                    <span class="badge text-bg-success">selected</span>
+                  {% elif market.is_active %}
+                    <span class="badge text-bg-secondary">active</span>
+                  {% else %}
+                    <span class="badge text-bg-dark">available</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if markets|length > 20 %}
+        <div class="muted mt-2">Showing first 20 of {{ markets|length }} synced markets.</div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state embedded">
+        <h2>No futures markets synced</h2>
+        <p>Run sync to discover futures or swap markets supported by this exchange in CCXT.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}
