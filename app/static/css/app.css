@@ -245,6 +245,31 @@ dd {
   flex-wrap: nowrap;
 }
 
+.pagination-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.modal-content {
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.modal-header,
+.modal-footer {
+  border-color: var(--line);
+}
+
+.delete-warning-list {
+  margin: 12px 0 0;
+  color: #fca5a5;
+}
+
 .control-strip {
   display: flex;
   flex-wrap: wrap;
@@ -326,6 +351,11 @@ dd {
   }
 
   .section-heading {
+    flex-direction: column;
+  }
+
+  .pagination-bar {
+    align-items: flex-start;
     flex-direction: column;
   }
 }

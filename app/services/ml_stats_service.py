@@ -11,10 +11,15 @@ from app.models.ml_snapshot_label import MlSnapshotLabel
 from app.models.ml_training_session import MlTrainingSession
 
 
-def get_ml_training_stats() -> dict:
+def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10) -> dict:
     db = SessionLocal()
     try:
+        snapshots_page_size = max(1, min(snapshots_page_size, 100))
+        snapshots_page = max(1, snapshots_page)
         total_snapshots = db.scalar(select(func.count()).select_from(MlFeatureSnapshot)) or 0
+        total_snapshot_pages = max(1, (total_snapshots + snapshots_page_size - 1) // snapshots_page_size)
+        snapshots_page = min(snapshots_page, total_snapshot_pages)
+        snapshots_offset = (snapshots_page - 1) * snapshots_page_size
         total_labels = db.scalar(select(func.count()).select_from(MlSnapshotLabel)) or 0
         pending_labels = db.scalar(
             select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(False))
@@ -85,7 +90,12 @@ def get_ml_training_stats() -> dict:
         )
         models = list(db.scalars(select(MlModel).order_by(MlModel.trained_at.desc()).limit(20)))
         latest_feature_snapshots = list(
-            db.scalars(select(MlFeatureSnapshot).order_by(MlFeatureSnapshot.captured_at.desc()).limit(20))
+            db.scalars(
+                select(MlFeatureSnapshot)
+                .order_by(MlFeatureSnapshot.captured_at.desc())
+                .offset(snapshots_offset)
+                .limit(snapshots_page_size)
+            )
         )
 
         return {
@@ -113,6 +123,16 @@ def get_ml_training_stats() -> dict:
             "snapshots_per_symbol": snapshots_per_symbol,
             "models": models,
             "latest_feature_snapshots": latest_feature_snapshots,
+            "snapshots_pagination": {
+                "current_page": snapshots_page,
+                "page_size": snapshots_page_size,
+                "total_pages": total_snapshot_pages,
+                "total_records": total_snapshots,
+                "has_previous": snapshots_page > 1,
+                "has_next": snapshots_page < total_snapshot_pages,
+                "previous_page": max(1, snapshots_page - 1),
+                "next_page": min(total_snapshot_pages, snapshots_page + 1),
+            },
         }
     finally:
         db.close()

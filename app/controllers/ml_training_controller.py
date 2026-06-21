@@ -1,3 +1,4 @@
+import logging
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Query, Request
@@ -5,6 +6,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from app.core.ml_training_runner import capture_once_debug, start_ml_training_runner, stop_ml_training_runner
+from app.services.ml_dataset_cleanup_service import delete_ml_dataset
 from app.services.ml_labeling_service import process_pending_labels
 from app.services.ml_stats_service import get_ml_training_stats
 from app.services.ml_training_service import train_basic_direction_model
@@ -12,6 +14,7 @@ from app.services.ml_training_service import train_basic_direction_model
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+logger = logging.getLogger(__name__)
 
 
 def _redirect_with_message(status: str, message: str) -> RedirectResponse:
@@ -23,10 +26,17 @@ def ml_training_dashboard(
     request: Request,
     status: str | None = Query(None),
     message: str | None = Query(None),
+    snapshots_page: int = Query(1, ge=1),
+    snapshots_page_size: int = Query(10, ge=1, le=100),
 ):
     return templates.TemplateResponse(
         "ml_training/index.html",
-        {"request": request, "stats": get_ml_training_stats(), "status": status, "message": message},
+        {
+            "request": request,
+            "stats": get_ml_training_stats(snapshots_page, snapshots_page_size),
+            "status": status,
+            "message": message,
+        },
     )
 
 
@@ -48,6 +58,32 @@ async def stop_ml_training():
 def process_labels():
     result = process_pending_labels()
     return _redirect_with_message("success", f"Processed {result['processed']} labels; skipped {result['skipped']}.")
+
+
+@router.post("/ml-training/delete-dataset")
+async def delete_dataset(delete_models: bool = Form(False)):
+    try:
+        await stop_ml_training_runner()
+        result = delete_ml_dataset(delete_models=delete_models)
+    except Exception as exc:
+        logger.exception("Failed to delete ML dataset")
+        return _redirect_with_message("danger", f"Failed to delete ML dataset: {exc}")
+
+    message = (
+        "Deleted ML dataset: "
+        f"{result['deleted_feature_snapshots']} feature snapshots, "
+        f"{result['deleted_labels']} labels, "
+        f"{result['deleted_recent_trades']} recent trades snapshots, "
+        f"{result['deleted_micro_candles']} micro candles."
+    )
+    if result["stopped_sessions"]:
+        message = f"Stopped {result['stopped_sessions']} running training session(s). {message}"
+    if delete_models:
+        message = (
+            f"{message} Deleted {result['deleted_models']} trained model rows "
+            f"and {result['deleted_model_files']} model file(s)."
+        )
+    return _redirect_with_message("success", message)
 
 
 @router.post("/ml-training/capture-once")
