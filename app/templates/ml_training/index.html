@@ -150,42 +150,178 @@
         {% endif %}
       </div>
     </div>
-    {% if stats.latest_feature_snapshots %}
-      <div class="table-responsive">
-        <table class="table table-dark table-hover align-middle data-table">
+    {% if stats.latest_feature_snapshot_rows %}
+      <div class="feature-table-scroll">
+        <table class="table table-dark table-hover align-middle data-table feature-snapshot-table">
           <thead>
+            <tr class="table-group-row">
+              <th colspan="4">Time / Exchange</th>
+              <th colspan="8">Price</th>
+              <th colspan="13">Order Book</th>
+              <th colspan="9">Order Book Dynamics</th>
+              <th colspan="7">Tape</th>
+              <th colspan="5">Candle</th>
+              <th colspan="4">Cross Exchange</th>
+              <th colspan="8">Funding / OI / Volume</th>
+              <th colspan="6">Quality</th>
+              <th colspan="1">Labels</th>
+            </tr>
             <tr>
               <th>Captured</th>
               <th>Exchange</th>
               <th>Symbol</th>
-              <th>Quality</th>
-              <th>Latency</th>
-              <th>Missing</th>
-              <th>Buy/Sell Delta</th>
+              <th>ID</th>
+              <th>Best Bid</th>
+              <th>Best Ask</th>
+              <th>Spread</th>
+              <th>Spread %</th>
+              <th>Mid Price</th>
+              <th>Last</th>
+              <th>Mark</th>
+              <th>Index</th>
+              <th>Bid Depth 5</th>
+              <th>Ask Depth 5</th>
+              <th>Bid Depth 10</th>
+              <th>Ask Depth 10</th>
+              <th>Bid Depth 20</th>
+              <th>Ask Depth 20</th>
+              <th>Imbalance 5</th>
+              <th>Imbalance 10</th>
+              <th>Imbalance 20</th>
+              <th>Top Bid Size</th>
+              <th>Top Ask Size</th>
+              <th>Bid Wall</th>
+              <th>Ask Wall</th>
+              <th>Bid Depth 5 Δ</th>
+              <th>Ask Depth 5 Δ</th>
+              <th>Imbalance 5 Δ</th>
+              <th>Bid Depth 10 Δ</th>
+              <th>Ask Depth 10 Δ</th>
+              <th>Imbalance 10 Δ</th>
+              <th>Spread Δ</th>
+              <th>Mid Δ</th>
+              <th>Wall Shift</th>
+              <th>Buy Volume</th>
+              <th>Sell Volume</th>
+              <th>Buy/Sell Δ</th>
               <th>Buy/Sell Ratio</th>
-              <th>Candle Momentum 5</th>
-              <th>Spread Delta</th>
-              <th>Mid Delta</th>
-              <th>Imbalance 5 Delta</th>
-              <th>Funding Delta</th>
+              <th>Avg Trade Size</th>
+              <th>Large Trades</th>
+              <th>Largest Trade</th>
+              <th>Return 1</th>
+              <th>Return 3</th>
+              <th>Volume 1</th>
+              <th>Volume Avg 5</th>
+              <th>Momentum 5</th>
+              <th>Mid Avg</th>
+              <th>Mid Median</th>
+              <th>Price Dev %</th>
+              <th>Spread %</th>
+              <th>Funding Rate</th>
+              <th>Funding Δ</th>
+              <th>Funding Abs</th>
+              <th>Funding Pressure</th>
+              <th>Open Interest</th>
+              <th>Volume 24h</th>
+              <th>Quote Volume 24h</th>
+              <th>Price Change 24h %</th>
+              <th>Latency</th>
+              <th>Book TS</th>
+              <th>Ticker TS</th>
+              <th>Trades TS</th>
+              <th>Quality</th>
+              <th>Missing</th>
+              <th>Labels</th>
             </tr>
           </thead>
           <tbody>
-            {% for snapshot in stats.latest_feature_snapshots %}
+            {% for row in stats.latest_feature_snapshot_rows %}
+              {% set snapshot = row.snapshot %}
               <tr>
                 <td>{{ snapshot.captured_at }}</td>
                 <td>{{ snapshot.exchange_code }}</td>
                 <td>{{ snapshot.symbol }}</td>
-                <td>{{ snapshot.data_quality_score if snapshot.data_quality_score is not none else '-' }}</td>
-                <td>{{ snapshot.capture_latency_ms if snapshot.capture_latency_ms is not none else '-' }}</td>
-                <td>{{ snapshot.missing_fields_count if snapshot.missing_fields_count is not none else '-' }}</td>
-                <td>{{ snapshot.buy_sell_delta if snapshot.buy_sell_delta is not none else '-' }}</td>
-                <td>{{ snapshot.buy_sell_ratio if snapshot.buy_sell_ratio is not none else '-' }}</td>
-                <td>{{ snapshot.candle_momentum_5 if snapshot.candle_momentum_5 is not none else '-' }}</td>
-                <td>{{ snapshot.spread_delta if snapshot.spread_delta is not none else '-' }}</td>
-                <td>{{ snapshot.mid_price_delta if snapshot.mid_price_delta is not none else '-' }}</td>
-                <td>{{ snapshot.imbalance_5_delta if snapshot.imbalance_5_delta is not none else '-' }}</td>
-                <td>{{ snapshot.funding_rate_delta if snapshot.funding_rate_delta is not none else '-' }}</td>
+                <td>{{ snapshot.id }}</td>
+                <td>{{ snapshot.best_bid|feature_value(8) }}</td>
+                <td>{{ snapshot.best_ask|feature_value(8) }}</td>
+                <td>{{ snapshot.spread|feature_value(8) }}</td>
+                <td>{{ snapshot.spread_percent|feature_value(6) }}</td>
+                <td>{{ snapshot.mid_price|feature_value(8) }}</td>
+                <td>{{ snapshot.last_price|feature_value(8) }}</td>
+                <td>{{ snapshot.mark_price|feature_value(8) }}</td>
+                <td>{{ snapshot.index_price|feature_value(8) }}</td>
+                <td>{{ snapshot.bid_depth_5|feature_value(6) }}</td>
+                <td>{{ snapshot.ask_depth_5|feature_value(6) }}</td>
+                <td>{{ snapshot.bid_depth_10|feature_value(6) }}</td>
+                <td>{{ snapshot.ask_depth_10|feature_value(6) }}</td>
+                <td>{{ snapshot.bid_depth_20|feature_value(6) }}</td>
+                <td>{{ snapshot.ask_depth_20|feature_value(6) }}</td>
+                <td>{{ snapshot.order_book_imbalance_5|feature_value(6) }}</td>
+                <td>{{ snapshot.order_book_imbalance_10|feature_value(6) }}</td>
+                <td>{{ snapshot.order_book_imbalance_20|feature_value(6) }}</td>
+                <td>{{ snapshot.top_bid_size|feature_value(6) }}</td>
+                <td>{{ snapshot.top_ask_size|feature_value(6) }}</td>
+                <td>{{ snapshot.bid_wall_score|feature_value(6) }}</td>
+                <td>{{ snapshot.ask_wall_score|feature_value(6) }}</td>
+                <td>{{ snapshot.bid_depth_5_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.ask_depth_5_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.imbalance_5_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.bid_depth_10_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.ask_depth_10_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.imbalance_10_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.spread_delta|feature_value(8) }}</td>
+                <td>{{ snapshot.mid_price_delta|feature_value(8) }}</td>
+                <td>{{ snapshot.wall_shift_score|feature_value(6) }}</td>
+                <td>{{ snapshot.buy_volume|feature_value(6) }}</td>
+                <td>{{ snapshot.sell_volume|feature_value(6) }}</td>
+                <td>{{ snapshot.buy_sell_delta|feature_value(6) }}</td>
+                <td>{{ snapshot.buy_sell_ratio|feature_value(6) }}</td>
+                <td>{{ snapshot.avg_trade_size|feature_value(6) }}</td>
+                <td>{{ snapshot.large_trade_count|feature_value }}</td>
+                <td>{{ snapshot.largest_trade_size|feature_value(6) }}</td>
+                <td>{{ snapshot.candle_return_1|feature_value(6) }}</td>
+                <td>{{ snapshot.candle_return_3|feature_value(6) }}</td>
+                <td>{{ snapshot.candle_volume_1|feature_value(6) }}</td>
+                <td>{{ snapshot.candle_volume_avg_5|feature_value(6) }}</td>
+                <td>{{ snapshot.candle_momentum_5|feature_value(6) }}</td>
+                <td>{{ snapshot.cross_exchange_mid_avg|feature_value(8) }}</td>
+                <td>{{ snapshot.cross_exchange_mid_median|feature_value(8) }}</td>
+                <td>{{ snapshot.cross_exchange_price_deviation_percent|feature_value(6) }}</td>
+                <td>{{ snapshot.cross_exchange_spread_percent|feature_value(6) }}</td>
+                <td>{{ snapshot.funding_rate|feature_value(8) }}</td>
+                <td>{{ snapshot.funding_rate_delta|feature_value(8) }}</td>
+                <td>{{ snapshot.funding_rate_abs|feature_value(8) }}</td>
+                <td>{{ snapshot.funding_pressure_score|feature_value(8) }}</td>
+                <td>{{ snapshot.open_interest|feature_value(6) }}</td>
+                <td>{{ snapshot.volume_24h|feature_value(6) }}</td>
+                <td>{{ snapshot.quote_volume_24h|feature_value(6) }}</td>
+                <td>{{ snapshot.price_change_percent_24h|feature_value(6) }}</td>
+                <td>{{ snapshot.capture_latency_ms|feature_value }}{% if snapshot.capture_latency_ms is not none %} ms{% endif %}</td>
+                <td>{{ snapshot.order_book_timestamp or '-' }}</td>
+                <td>{{ snapshot.ticker_timestamp or '-' }}</td>
+                <td>{{ snapshot.trades_timestamp or '-' }}</td>
+                <td>{{ snapshot.data_quality_score|feature_value }}</td>
+                <td>{{ snapshot.missing_fields_count|feature_value }}</td>
+                <td class="labels-cell">
+                  {% if row.labels %}
+                    {% for label in row.labels %}
+                      <div class="label-chip">
+                        <span>{{ label.horizon_seconds }}s</span>
+                        {% if label.direction_label %}
+                          <span class="badge text-bg-{{ 'success' if label.direction_label == 'long' else 'danger' if label.direction_label == 'short' else 'secondary' }}">{{ label.direction_label }}</span>
+                        {% else %}
+                          <span class="badge text-bg-warning">pending</span>
+                        {% endif %}
+                        <span>ret {{ label.future_return_percent|feature_value(6) }}</span>
+                        <span>L {{ label.long_would_win|feature_value }}</span>
+                        <span>S {{ label.short_would_win|feature_value }}</span>
+                        <span>{{ 'labeled' if label.is_labeled else 'unlabeled' }}</span>
+                      </div>
+                    {% endfor %}
+                  {% else %}
+                    -
+                  {% endif %}
+                </td>
               </tr>
             {% endfor %}
           </tbody>

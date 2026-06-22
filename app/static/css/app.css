@@ -240,6 +240,46 @@ dd {
   font-size: 13px;
 }
 
+.feature-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.feature-snapshot-table {
+  min-width: 5200px;
+}
+
+.feature-snapshot-table th,
+.feature-snapshot-table td {
+  white-space: nowrap;
+}
+
+.feature-snapshot-table .table-group-row th {
+  color: #93c5fd;
+  background: rgba(79, 140, 255, 0.12);
+  border-bottom-color: rgba(147, 197, 253, 0.35);
+  text-align: center;
+}
+
+.labels-cell {
+  min-width: 360px;
+  white-space: normal;
+}
+
+.label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 2px 0;
+  padding: 4px 6px;
+  color: var(--text);
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
 .card-actions.compact {
   margin-top: 0;
   flex-wrap: nowrap;

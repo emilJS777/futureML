@@ -97,6 +97,22 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
                 .limit(snapshots_page_size)
             )
         )
+        snapshot_ids = [snapshot.id for snapshot in latest_feature_snapshots]
+        labels_by_snapshot_id: dict[int, list[MlSnapshotLabel]] = {snapshot_id: [] for snapshot_id in snapshot_ids}
+        if snapshot_ids:
+            labels = list(
+                db.scalars(
+                    select(MlSnapshotLabel)
+                    .where(MlSnapshotLabel.feature_snapshot_id.in_(snapshot_ids))
+                    .order_by(MlSnapshotLabel.feature_snapshot_id, MlSnapshotLabel.horizon_seconds)
+                )
+            )
+            for label in labels:
+                labels_by_snapshot_id.setdefault(label.feature_snapshot_id, []).append(label)
+        latest_feature_snapshot_rows = [
+            {"snapshot": snapshot, "labels": labels_by_snapshot_id.get(snapshot.id, [])}
+            for snapshot in latest_feature_snapshots
+        ]
 
         return {
             "total_snapshots": total_snapshots,
@@ -123,6 +139,7 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
             "snapshots_per_symbol": snapshots_per_symbol,
             "models": models,
             "latest_feature_snapshots": latest_feature_snapshots,
+            "latest_feature_snapshot_rows": latest_feature_snapshot_rows,
             "snapshots_pagination": {
                 "current_page": snapshots_page,
                 "page_size": snapshots_page_size,

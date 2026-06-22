@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Form, Query, Request
@@ -15,6 +16,26 @@ from app.services.ml_training_service import train_basic_direction_model
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
 logger = logging.getLogger(__name__)
+
+
+def _format_feature_value(value, places: int = 6) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, int):
+        return str(value)
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return str(value)
+    if number == 0:
+        return "0"
+    formatted = f"{number:.{places}f}".rstrip("0").rstrip(".")
+    return formatted or "0"
+
+
+templates.env.filters["feature_value"] = _format_feature_value
 
 
 def _redirect_with_message(status: str, message: str) -> RedirectResponse:
