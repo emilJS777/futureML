@@ -70,6 +70,14 @@ FEATURE_COLUMNS = [
     "cross_exchange_spread_percent",
 ]
 
+TARGET_COLUMNS = [
+    "direction_label",
+    "long_tp_hit_0_3",
+    "short_tp_hit_0_3",
+    "expected_long_return_percent",
+    "expected_short_return_percent",
+]
+
 
 def _to_decimal(value: float | None) -> Decimal | None:
     if value is None:

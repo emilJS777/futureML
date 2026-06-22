@@ -27,6 +27,28 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
         labeled_labels = db.scalar(
             select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(True))
         ) or 0
+        advanced_labels = db.scalar(
+            select(func.count())
+            .select_from(MlSnapshotLabel)
+            .where(
+                MlSnapshotLabel.long_mfe_percent.is_not(None),
+                MlSnapshotLabel.long_mae_percent.is_not(None),
+                MlSnapshotLabel.short_mfe_percent.is_not(None),
+                MlSnapshotLabel.short_mae_percent.is_not(None),
+            )
+        ) or 0
+        avg_long_mfe_30 = db.scalar(
+            select(func.avg(MlSnapshotLabel.long_mfe_percent)).where(MlSnapshotLabel.horizon_seconds == 30)
+        )
+        avg_long_mae_30 = db.scalar(
+            select(func.avg(MlSnapshotLabel.long_mae_percent)).where(MlSnapshotLabel.horizon_seconds == 30)
+        )
+        avg_short_mfe_30 = db.scalar(
+            select(func.avg(MlSnapshotLabel.short_mfe_percent)).where(MlSnapshotLabel.horizon_seconds == 30)
+        )
+        avg_short_mae_30 = db.scalar(
+            select(func.avg(MlSnapshotLabel.short_mae_percent)).where(MlSnapshotLabel.horizon_seconds == 30)
+        )
         long_count = db.scalar(
             select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.direction_label == "long")
         ) or 0
@@ -110,7 +132,17 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
             for label in labels:
                 labels_by_snapshot_id.setdefault(label.feature_snapshot_id, []).append(label)
         latest_feature_snapshot_rows = [
-            {"snapshot": snapshot, "labels": labels_by_snapshot_id.get(snapshot.id, [])}
+            {
+                "snapshot": snapshot,
+                "labels": labels_by_snapshot_id.get(snapshot.id, []),
+                "advanced_ready": any(
+                    label.long_mfe_percent is not None
+                    and label.long_mae_percent is not None
+                    and label.short_mfe_percent is not None
+                    and label.short_mae_percent is not None
+                    for label in labels_by_snapshot_id.get(snapshot.id, [])
+                ),
+            }
             for snapshot in latest_feature_snapshots
         ]
 
@@ -119,6 +151,11 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
             "total_labels": total_labels,
             "pending_labels": pending_labels,
             "labeled_labels": labeled_labels,
+            "advanced_labels": advanced_labels,
+            "avg_long_mfe_30": avg_long_mfe_30,
+            "avg_long_mae_30": avg_long_mae_30,
+            "avg_short_mfe_30": avg_short_mfe_30,
+            "avg_short_mae_30": avg_short_mae_30,
             "long_count": long_count,
             "short_count": short_count,
             "flat_count": flat_count,

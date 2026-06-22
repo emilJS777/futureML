@@ -134,5 +134,7 @@ LABEL_SHORT_THRESHOLD_PERCENT=0.05
 
 Use `Process Labels` to label pending snapshots manually, or let the running training loop process them after each collection cycle. `Train Basic Model` trains an offline `RandomForestClassifier` from stored labeled rows only. At least 1000 labeled rows are required for the selected horizon, and trained model files are saved under `storage/models/`.
 
+Direction labels answer where price ended after a label horizon. Advanced MFE/MAE labels answer how far price moved in favor of, or against, a hypothetical long or short during the horizon. TP/SL hit labels are stored for 0.2%, 0.3%, 0.5%, and 1.0% thresholds so future offline analysis can compare risk/reward, trade quality, and expected value without creating real orders.
+
 These features are only for future ML training and analysis. This ML foundation does not predict live trades and never creates orders, positions, long entries, or short entries.
 # futureML

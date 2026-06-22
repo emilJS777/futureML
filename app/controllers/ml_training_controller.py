@@ -8,7 +8,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.ml_training_runner import capture_once_debug, start_ml_training_runner, stop_ml_training_runner
 from app.services.ml_dataset_cleanup_service import delete_ml_dataset
-from app.services.ml_labeling_service import process_pending_labels
+from app.services.ml_labeling_service import backfill_advanced_labels, process_pending_labels
 from app.services.ml_stats_service import get_ml_training_stats
 from app.services.ml_training_service import train_basic_direction_model
 
@@ -79,6 +79,15 @@ async def stop_ml_training():
 def process_labels():
     result = process_pending_labels()
     return _redirect_with_message("success", f"Processed {result['processed']} labels; skipped {result['skipped']}.")
+
+
+@router.post("/ml-training/backfill-labels")
+def backfill_labels():
+    result = backfill_advanced_labels()
+    return _redirect_with_message(
+        "success",
+        f"Backfilled advanced labels for {result['updated']} rows; skipped {result['skipped']}.",
+    )
 
 
 @router.post("/ml-training/delete-dataset")

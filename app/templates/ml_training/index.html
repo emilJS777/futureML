@@ -2,6 +2,29 @@
 {% block title %}ML Training | FuturesML{% endblock %}
 {% block heading %}ML Training{% endblock %}
 {% block content %}
+  {% macro detail_item(label, value, places=6) %}
+    <div><dt>{{ label }}</dt><dd>{{ value|feature_value(places) }}</dd></div>
+  {% endmacro %}
+  {% macro time_item(label, value) %}
+    <div><dt>{{ label }}</dt><dd>{{ value or '-' }}</dd></div>
+  {% endmacro %}
+  {% macro bool_badge(value) %}
+    {% if value is none %}
+      <span class="badge text-bg-secondary">-</span>
+    {% elif value %}
+      <span class="badge text-bg-success">yes</span>
+    {% else %}
+      <span class="badge text-bg-secondary">no</span>
+    {% endif %}
+  {% endmacro %}
+  {% macro direction_badge(value) %}
+    {% if value %}
+      <span class="badge text-bg-{{ 'success' if value == 'long' else 'danger' if value == 'short' else 'secondary' }}">{{ value }}</span>
+    {% else %}
+      <span class="badge text-bg-warning">pending</span>
+    {% endif %}
+  {% endmacro %}
+
   {% if message %}
     <div class="alert alert-{{ status or 'info' }}">{{ message }}</div>
   {% endif %}
@@ -31,6 +54,9 @@
       <form method="post" action="/ml-training/process-labels">
         <button class="btn btn-warning" type="submit">Process Labels</button>
       </form>
+      <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#backfillLabelsModal">
+        Backfill Advanced Labels
+      </button>
       <form method="post" action="/ml-training/capture-once">
         <button class="btn btn-outline-light" type="submit">Capture Once Debug</button>
       </form>
@@ -75,6 +101,11 @@
       <div><dt>Total labels</dt><dd>{{ stats.total_labels }}</dd></div>
       <div><dt>Pending labels</dt><dd>{{ stats.pending_labels }}</dd></div>
       <div><dt>Labeled snapshots</dt><dd>{{ stats.labeled_labels }}</dd></div>
+      <div><dt>Labels with advanced TP/SL</dt><dd>{{ stats.advanced_labels }}</dd></div>
+      <div><dt>Avg long MFE 30s</dt><dd>{{ stats.avg_long_mfe_30|feature_value(6) }}</dd></div>
+      <div><dt>Avg long MAE 30s</dt><dd>{{ stats.avg_long_mae_30|feature_value(6) }}</dd></div>
+      <div><dt>Avg short MFE 30s</dt><dd>{{ stats.avg_short_mfe_30|feature_value(6) }}</dd></div>
+      <div><dt>Avg short MAE 30s</dt><dd>{{ stats.avg_short_mae_30|feature_value(6) }}</dd></div>
       <div><dt>Long labels</dt><dd>{{ stats.long_count }}</dd></div>
       <div><dt>Short labels</dt><dd>{{ stats.short_count }}</dd></div>
       <div><dt>Flat labels</dt><dd>{{ stats.flat_count }}</dd></div>
@@ -152,86 +183,18 @@
     </div>
     {% if stats.latest_feature_snapshot_rows %}
       <div class="feature-table-scroll">
-        <table class="table table-dark table-hover align-middle data-table feature-snapshot-table">
+        <table class="table table-dark table-hover align-middle data-table feature-snapshot-table compact-feature-table">
           <thead>
-            <tr class="table-group-row">
-              <th colspan="4">Time / Exchange</th>
-              <th colspan="8">Price</th>
-              <th colspan="13">Order Book</th>
-              <th colspan="9">Order Book Dynamics</th>
-              <th colspan="7">Tape</th>
-              <th colspan="5">Candle</th>
-              <th colspan="4">Cross Exchange</th>
-              <th colspan="8">Funding / OI / Volume</th>
-              <th colspan="6">Quality</th>
-              <th colspan="1">Labels</th>
-            </tr>
             <tr>
               <th>Captured</th>
               <th>Exchange</th>
               <th>Symbol</th>
-              <th>ID</th>
-              <th>Best Bid</th>
-              <th>Best Ask</th>
-              <th>Spread</th>
-              <th>Spread %</th>
               <th>Mid Price</th>
-              <th>Last</th>
-              <th>Mark</th>
-              <th>Index</th>
-              <th>Bid Depth 5</th>
-              <th>Ask Depth 5</th>
-              <th>Bid Depth 10</th>
-              <th>Ask Depth 10</th>
-              <th>Bid Depth 20</th>
-              <th>Ask Depth 20</th>
-              <th>Imbalance 5</th>
-              <th>Imbalance 10</th>
-              <th>Imbalance 20</th>
-              <th>Top Bid Size</th>
-              <th>Top Ask Size</th>
-              <th>Bid Wall</th>
-              <th>Ask Wall</th>
-              <th>Bid Depth 5 Δ</th>
-              <th>Ask Depth 5 Δ</th>
-              <th>Imbalance 5 Δ</th>
-              <th>Bid Depth 10 Δ</th>
-              <th>Ask Depth 10 Δ</th>
-              <th>Imbalance 10 Δ</th>
-              <th>Spread Δ</th>
-              <th>Mid Δ</th>
-              <th>Wall Shift</th>
-              <th>Buy Volume</th>
-              <th>Sell Volume</th>
-              <th>Buy/Sell Δ</th>
-              <th>Buy/Sell Ratio</th>
-              <th>Avg Trade Size</th>
-              <th>Large Trades</th>
-              <th>Largest Trade</th>
-              <th>Return 1</th>
-              <th>Return 3</th>
-              <th>Volume 1</th>
-              <th>Volume Avg 5</th>
-              <th>Momentum 5</th>
-              <th>Mid Avg</th>
-              <th>Mid Median</th>
-              <th>Price Dev %</th>
-              <th>Spread %</th>
-              <th>Funding Rate</th>
-              <th>Funding Δ</th>
-              <th>Funding Abs</th>
-              <th>Funding Pressure</th>
-              <th>Open Interest</th>
-              <th>Volume 24h</th>
-              <th>Quote Volume 24h</th>
-              <th>Price Change 24h %</th>
-              <th>Latency</th>
-              <th>Book TS</th>
-              <th>Ticker TS</th>
-              <th>Trades TS</th>
               <th>Quality</th>
-              <th>Missing</th>
+              <th>Latency</th>
               <th>Labels</th>
+              <th>Advanced</th>
+              <th>Details</th>
             </tr>
           </thead>
           <tbody>
@@ -241,86 +204,33 @@
                 <td>{{ snapshot.captured_at }}</td>
                 <td>{{ snapshot.exchange_code }}</td>
                 <td>{{ snapshot.symbol }}</td>
-                <td>{{ snapshot.id }}</td>
-                <td>{{ snapshot.best_bid|feature_value(8) }}</td>
-                <td>{{ snapshot.best_ask|feature_value(8) }}</td>
-                <td>{{ snapshot.spread|feature_value(8) }}</td>
-                <td>{{ snapshot.spread_percent|feature_value(6) }}</td>
                 <td>{{ snapshot.mid_price|feature_value(8) }}</td>
-                <td>{{ snapshot.last_price|feature_value(8) }}</td>
-                <td>{{ snapshot.mark_price|feature_value(8) }}</td>
-                <td>{{ snapshot.index_price|feature_value(8) }}</td>
-                <td>{{ snapshot.bid_depth_5|feature_value(6) }}</td>
-                <td>{{ snapshot.ask_depth_5|feature_value(6) }}</td>
-                <td>{{ snapshot.bid_depth_10|feature_value(6) }}</td>
-                <td>{{ snapshot.ask_depth_10|feature_value(6) }}</td>
-                <td>{{ snapshot.bid_depth_20|feature_value(6) }}</td>
-                <td>{{ snapshot.ask_depth_20|feature_value(6) }}</td>
-                <td>{{ snapshot.order_book_imbalance_5|feature_value(6) }}</td>
-                <td>{{ snapshot.order_book_imbalance_10|feature_value(6) }}</td>
-                <td>{{ snapshot.order_book_imbalance_20|feature_value(6) }}</td>
-                <td>{{ snapshot.top_bid_size|feature_value(6) }}</td>
-                <td>{{ snapshot.top_ask_size|feature_value(6) }}</td>
-                <td>{{ snapshot.bid_wall_score|feature_value(6) }}</td>
-                <td>{{ snapshot.ask_wall_score|feature_value(6) }}</td>
-                <td>{{ snapshot.bid_depth_5_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.ask_depth_5_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.imbalance_5_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.bid_depth_10_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.ask_depth_10_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.imbalance_10_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.spread_delta|feature_value(8) }}</td>
-                <td>{{ snapshot.mid_price_delta|feature_value(8) }}</td>
-                <td>{{ snapshot.wall_shift_score|feature_value(6) }}</td>
-                <td>{{ snapshot.buy_volume|feature_value(6) }}</td>
-                <td>{{ snapshot.sell_volume|feature_value(6) }}</td>
-                <td>{{ snapshot.buy_sell_delta|feature_value(6) }}</td>
-                <td>{{ snapshot.buy_sell_ratio|feature_value(6) }}</td>
-                <td>{{ snapshot.avg_trade_size|feature_value(6) }}</td>
-                <td>{{ snapshot.large_trade_count|feature_value }}</td>
-                <td>{{ snapshot.largest_trade_size|feature_value(6) }}</td>
-                <td>{{ snapshot.candle_return_1|feature_value(6) }}</td>
-                <td>{{ snapshot.candle_return_3|feature_value(6) }}</td>
-                <td>{{ snapshot.candle_volume_1|feature_value(6) }}</td>
-                <td>{{ snapshot.candle_volume_avg_5|feature_value(6) }}</td>
-                <td>{{ snapshot.candle_momentum_5|feature_value(6) }}</td>
-                <td>{{ snapshot.cross_exchange_mid_avg|feature_value(8) }}</td>
-                <td>{{ snapshot.cross_exchange_mid_median|feature_value(8) }}</td>
-                <td>{{ snapshot.cross_exchange_price_deviation_percent|feature_value(6) }}</td>
-                <td>{{ snapshot.cross_exchange_spread_percent|feature_value(6) }}</td>
-                <td>{{ snapshot.funding_rate|feature_value(8) }}</td>
-                <td>{{ snapshot.funding_rate_delta|feature_value(8) }}</td>
-                <td>{{ snapshot.funding_rate_abs|feature_value(8) }}</td>
-                <td>{{ snapshot.funding_pressure_score|feature_value(8) }}</td>
-                <td>{{ snapshot.open_interest|feature_value(6) }}</td>
-                <td>{{ snapshot.volume_24h|feature_value(6) }}</td>
-                <td>{{ snapshot.quote_volume_24h|feature_value(6) }}</td>
-                <td>{{ snapshot.price_change_percent_24h|feature_value(6) }}</td>
-                <td>{{ snapshot.capture_latency_ms|feature_value }}{% if snapshot.capture_latency_ms is not none %} ms{% endif %}</td>
-                <td>{{ snapshot.order_book_timestamp or '-' }}</td>
-                <td>{{ snapshot.ticker_timestamp or '-' }}</td>
-                <td>{{ snapshot.trades_timestamp or '-' }}</td>
                 <td>{{ snapshot.data_quality_score|feature_value }}</td>
-                <td>{{ snapshot.missing_fields_count|feature_value }}</td>
-                <td class="labels-cell">
+                <td>{{ snapshot.capture_latency_ms|feature_value }}{% if snapshot.capture_latency_ms is not none %} ms{% endif %}</td>
+                <td class="compact-labels-cell">
                   {% if row.labels %}
                     {% for label in row.labels %}
-                      <div class="label-chip">
+                      <span class="label-chip">
                         <span>{{ label.horizon_seconds }}s</span>
-                        {% if label.direction_label %}
-                          <span class="badge text-bg-{{ 'success' if label.direction_label == 'long' else 'danger' if label.direction_label == 'short' else 'secondary' }}">{{ label.direction_label }}</span>
-                        {% else %}
-                          <span class="badge text-bg-warning">pending</span>
-                        {% endif %}
-                        <span>ret {{ label.future_return_percent|feature_value(6) }}</span>
-                        <span>L {{ label.long_would_win|feature_value }}</span>
-                        <span>S {{ label.short_would_win|feature_value }}</span>
-                        <span>{{ 'labeled' if label.is_labeled else 'unlabeled' }}</span>
-                      </div>
+                        {{ direction_badge(label.direction_label) }}
+                        <span>{{ label.future_return_percent|feature_value(6) }}</span>
+                      </span>
                     {% endfor %}
                   {% else %}
                     -
                   {% endif %}
+                </td>
+                <td>
+                  {% if row.advanced_ready %}
+                    <span class="badge text-bg-success">advanced ready</span>
+                  {% else %}
+                    <span class="badge text-bg-warning">pending</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button class="btn btn-sm btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#snapshotDetails{{ snapshot.id }}">
+                    View Details
+                  </button>
                 </td>
               </tr>
             {% endfor %}
@@ -334,6 +244,145 @@
       </div>
     {% endif %}
   </section>
+
+  {% for row in stats.latest_feature_snapshot_rows %}
+    {% set snapshot = row.snapshot %}
+    <div class="modal fade" id="snapshotDetails{{ snapshot.id }}" tabindex="-1" aria-labelledby="snapshotDetails{{ snapshot.id }}Label" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title" id="snapshotDetails{{ snapshot.id }}Label">{{ snapshot.exchange_code }} {{ snapshot.symbol }} snapshot #{{ snapshot.id }}</h2>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body snapshot-detail-modal">
+            <h2 class="compact-heading">Price</h2>
+            <dl class="details-list wide">{{ detail_item("Best bid", snapshot.best_bid, 8) }}{{ detail_item("Best ask", snapshot.best_ask, 8) }}{{ detail_item("Spread", snapshot.spread, 8) }}{{ detail_item("Spread %", snapshot.spread_percent, 6) }}{{ detail_item("Mid price", snapshot.mid_price, 8) }}{{ detail_item("Last price", snapshot.last_price, 8) }}{{ detail_item("Mark price", snapshot.mark_price, 8) }}{{ detail_item("Index price", snapshot.index_price, 8) }}</dl>
+
+            <h2 class="compact-heading mt-4">Order Book</h2>
+            <dl class="details-list wide">{{ detail_item("Bid depth 5", snapshot.bid_depth_5) }}{{ detail_item("Ask depth 5", snapshot.ask_depth_5) }}{{ detail_item("Bid depth 10", snapshot.bid_depth_10) }}{{ detail_item("Ask depth 10", snapshot.ask_depth_10) }}{{ detail_item("Bid depth 20", snapshot.bid_depth_20) }}{{ detail_item("Ask depth 20", snapshot.ask_depth_20) }}{{ detail_item("Imbalance 5", snapshot.order_book_imbalance_5) }}{{ detail_item("Imbalance 10", snapshot.order_book_imbalance_10) }}{{ detail_item("Imbalance 20", snapshot.order_book_imbalance_20) }}{{ detail_item("Top bid size", snapshot.top_bid_size) }}{{ detail_item("Top ask size", snapshot.top_ask_size) }}{{ detail_item("Bid wall score", snapshot.bid_wall_score) }}{{ detail_item("Ask wall score", snapshot.ask_wall_score) }}</dl>
+
+            <h2 class="compact-heading mt-4">Dynamics</h2>
+            <dl class="details-list wide">{{ detail_item("Bid depth 5 delta", snapshot.bid_depth_5_delta) }}{{ detail_item("Ask depth 5 delta", snapshot.ask_depth_5_delta) }}{{ detail_item("Imbalance 5 delta", snapshot.imbalance_5_delta) }}{{ detail_item("Bid depth 10 delta", snapshot.bid_depth_10_delta) }}{{ detail_item("Ask depth 10 delta", snapshot.ask_depth_10_delta) }}{{ detail_item("Imbalance 10 delta", snapshot.imbalance_10_delta) }}{{ detail_item("Spread delta", snapshot.spread_delta, 8) }}{{ detail_item("Mid price delta", snapshot.mid_price_delta, 8) }}{{ detail_item("Wall shift score", snapshot.wall_shift_score) }}</dl>
+
+            <h2 class="compact-heading mt-4">Tape</h2>
+            <dl class="details-list wide">{{ detail_item("Buy volume", snapshot.buy_volume) }}{{ detail_item("Sell volume", snapshot.sell_volume) }}{{ detail_item("Buy/sell delta", snapshot.buy_sell_delta) }}{{ detail_item("Buy/sell ratio", snapshot.buy_sell_ratio) }}{{ detail_item("Avg trade size", snapshot.avg_trade_size) }}{{ detail_item("Large trade count", snapshot.large_trade_count) }}{{ detail_item("Largest trade size", snapshot.largest_trade_size) }}</dl>
+
+            <h2 class="compact-heading mt-4">Candle</h2>
+            <dl class="details-list wide">{{ detail_item("Return 1", snapshot.candle_return_1) }}{{ detail_item("Return 3", snapshot.candle_return_3) }}{{ detail_item("Volume 1", snapshot.candle_volume_1) }}{{ detail_item("Volume avg 5", snapshot.candle_volume_avg_5) }}{{ detail_item("Momentum 5", snapshot.candle_momentum_5) }}</dl>
+
+            <h2 class="compact-heading mt-4">Cross Exchange</h2>
+            <dl class="details-list wide">{{ detail_item("Mid avg", snapshot.cross_exchange_mid_avg, 8) }}{{ detail_item("Mid median", snapshot.cross_exchange_mid_median, 8) }}{{ detail_item("Price deviation %", snapshot.cross_exchange_price_deviation_percent) }}{{ detail_item("Spread %", snapshot.cross_exchange_spread_percent) }}</dl>
+
+            <h2 class="compact-heading mt-4">Funding / OI / Volume</h2>
+            <dl class="details-list wide">{{ detail_item("Funding rate", snapshot.funding_rate, 8) }}{{ detail_item("Funding delta", snapshot.funding_rate_delta, 8) }}{{ detail_item("Funding abs", snapshot.funding_rate_abs, 8) }}{{ detail_item("Funding pressure", snapshot.funding_pressure_score, 8) }}{{ detail_item("Open interest", snapshot.open_interest) }}{{ detail_item("Volume 24h", snapshot.volume_24h) }}{{ detail_item("Quote volume 24h", snapshot.quote_volume_24h) }}{{ detail_item("Price change 24h %", snapshot.price_change_percent_24h) }}</dl>
+
+            <h2 class="compact-heading mt-4">Quality</h2>
+            <dl class="details-list wide">{{ detail_item("Capture latency ms", snapshot.capture_latency_ms) }}{{ time_item("Order book timestamp", snapshot.order_book_timestamp) }}{{ time_item("Ticker timestamp", snapshot.ticker_timestamp) }}{{ time_item("Trades timestamp", snapshot.trades_timestamp) }}{{ detail_item("Data quality score", snapshot.data_quality_score) }}{{ detail_item("Missing fields count", snapshot.missing_fields_count) }}</dl>
+
+            <h2 class="compact-heading mt-4">Labels / Advanced TP/SL</h2>
+            {% if row.labels %}
+              <div class="table-responsive">
+                <table class="table table-dark table-hover align-middle data-table">
+                  <thead>
+                    <tr>
+                      <th>Horizon</th>
+                      <th>Direction</th>
+                      <th>Future return</th>
+                      <th>Long MFE</th>
+                      <th>Long MAE</th>
+                      <th>Short MFE</th>
+                      <th>Short MAE</th>
+                      <th>L TP 0.3</th>
+                      <th>L SL 0.3</th>
+                      <th>S TP 0.3</th>
+                      <th>S SL 0.3</th>
+                      <th>L TP 0.2</th>
+                      <th>L SL 0.2</th>
+                      <th>S TP 0.2</th>
+                      <th>S SL 0.2</th>
+                      <th>L TP 0.5</th>
+                      <th>L SL 0.5</th>
+                      <th>S TP 0.5</th>
+                      <th>S SL 0.5</th>
+                      <th>L TP 1.0</th>
+                      <th>L SL 1.0</th>
+                      <th>S TP 1.0</th>
+                      <th>S SL 1.0</th>
+                      <th>Best L TP</th>
+                      <th>Best L SL</th>
+                      <th>Best S TP</th>
+                      <th>Best S SL</th>
+                      <th>Exp Long</th>
+                      <th>Exp Short</th>
+                      <th>Labeled</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for label in row.labels %}
+                      <tr>
+                        <td>{{ label.horizon_seconds }}s</td>
+                        <td>{{ direction_badge(label.direction_label) }}</td>
+                        <td>{{ label.future_return_percent|feature_value(6) }}</td>
+                        <td>{{ label.long_mfe_percent|feature_value(6) }}</td>
+                        <td>{{ label.long_mae_percent|feature_value(6) }}</td>
+                        <td>{{ label.short_mfe_percent|feature_value(6) }}</td>
+                        <td>{{ label.short_mae_percent|feature_value(6) }}</td>
+                        <td>{{ bool_badge(label.long_tp_hit_0_3) }}</td>
+                        <td>{{ bool_badge(label.long_sl_hit_0_3) }}</td>
+                        <td>{{ bool_badge(label.short_tp_hit_0_3) }}</td>
+                        <td>{{ bool_badge(label.short_sl_hit_0_3) }}</td>
+                        <td>{{ bool_badge(label.long_tp_hit_0_2) }}</td>
+                        <td>{{ bool_badge(label.long_sl_hit_0_2) }}</td>
+                        <td>{{ bool_badge(label.short_tp_hit_0_2) }}</td>
+                        <td>{{ bool_badge(label.short_sl_hit_0_2) }}</td>
+                        <td>{{ bool_badge(label.long_tp_hit_0_5) }}</td>
+                        <td>{{ bool_badge(label.long_sl_hit_0_5) }}</td>
+                        <td>{{ bool_badge(label.short_tp_hit_0_5) }}</td>
+                        <td>{{ bool_badge(label.short_sl_hit_0_5) }}</td>
+                        <td>{{ bool_badge(label.long_tp_hit_1_0) }}</td>
+                        <td>{{ bool_badge(label.long_sl_hit_1_0) }}</td>
+                        <td>{{ bool_badge(label.short_tp_hit_1_0) }}</td>
+                        <td>{{ bool_badge(label.short_sl_hit_1_0) }}</td>
+                        <td>{{ label.best_long_tp_percent|feature_value(6) }}</td>
+                        <td>{{ label.best_long_sl_percent|feature_value(6) }}</td>
+                        <td>{{ label.best_short_tp_percent|feature_value(6) }}</td>
+                        <td>{{ label.best_short_sl_percent|feature_value(6) }}</td>
+                        <td>{{ label.expected_long_return_percent|feature_value(6) }}</td>
+                        <td>{{ label.expected_short_return_percent|feature_value(6) }}</td>
+                        <td>{{ bool_badge(label.is_labeled) }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="muted">No labels for this snapshot.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+
+  <div class="modal fade" id="backfillLabelsModal" tabindex="-1" aria-labelledby="backfillLabelsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="/ml-training/backfill-labels">
+          <div class="modal-header">
+            <h2 class="modal-title" id="backfillLabelsModalLabel">Backfill Advanced Labels?</h2>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>This will recalculate advanced labels for existing dataset. It will not delete snapshots.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning">Backfill Advanced Labels</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <section class="panel wide-panel mt-4">
     <div class="section-heading">

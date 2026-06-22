@@ -250,6 +250,10 @@ dd {
   min-width: 5200px;
 }
 
+.compact-feature-table {
+  min-width: 1180px;
+}
+
 .feature-snapshot-table th,
 .feature-snapshot-table td {
   white-space: nowrap;
@@ -267,6 +271,10 @@ dd {
   white-space: normal;
 }
 
+.compact-labels-cell {
+  min-width: 420px;
+}
+
 .label-chip {
   display: inline-flex;
   align-items: center;
@@ -278,6 +286,15 @@ dd {
   border: 1px solid var(--line);
   border-radius: 8px;
   white-space: nowrap;
+}
+
+.snapshot-detail-modal .details-list {
+  margin-bottom: 20px;
+}
+
+.snapshot-detail-modal .table-responsive {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .card-actions.compact {
