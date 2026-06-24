@@ -11,6 +11,7 @@ from app.core.ml_training_runner import restart_running_ml_training_session
 from app.core.startup import run_startup_database_tasks
 from app.controllers.exchange_controller import router as exchange_router
 from app.controllers.market_data_controller import router as market_data_router
+from app.controllers.ml_experiment_controller import router as ml_experiment_router
 from app.controllers.ml_training_controller import router as ml_training_router
 
 
@@ -49,6 +50,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(exchange_router)
 app.include_router(market_data_router)
 app.include_router(ml_training_router)
+app.include_router(ml_experiment_router)
 
 
 @app.get("/")

@@ -137,4 +137,14 @@ Use `Process Labels` to label pending snapshots manually, or let the running tra
 Direction labels answer where price ended after a label horizon. Advanced MFE/MAE labels answer how far price moved in favor of, or against, a hypothetical long or short during the horizon. TP/SL hit labels are stored for 0.2%, 0.3%, 0.5%, and 1.0% thresholds so future offline analysis can compare risk/reward, trade quality, and expected value without creating real orders.
 
 These features are only for future ML training and analysis. This ML foundation does not predict live trades and never creates orders, positions, long entries, or short entries.
+
+## ML Experiments
+
+The `/ml-experiments` section trains offline direction-classification experiments from labeled feature snapshots. Experiments use a chronological split: the oldest 70% of eligible rows train the model and the newest 30% remain held out for metrics and shadow backtesting. Rows with a data quality score below 60 are excluded.
+
+Supported models currently include random forest and gradient boosting. Each completed experiment stores accuracy, per-class precision/recall/F1, a confusion matrix, feature importance, and a reproducible model artifact under `storage/models/experiments/`.
+
+Shadow Backtest runs the trained model against its held-out historical rows only. Predictions below the selected confidence threshold and `flat` predictions are skipped. Long predictions use the future labeled return, short predictions use its inverse, and configured fees plus slippage are subtracted from every accepted signal. The dashboard reports win rate, average win/loss, raw and net expectancy, maximum drawdown, and profit factor.
+
+A positive historical backtest does not guarantee real profitability. This module provides offline analysis only: it has no live prediction endpoint, exchange balance access, paper trading, order creation, position management, or execution.
 # futureML

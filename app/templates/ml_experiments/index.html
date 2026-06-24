@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}ML Experiments | FuturesML{% endblock %}
+{% block heading %}ML Experiments{% endblock %}
+{% block content %}
+  {% if message %}
+    <div class="alert alert-{{ status or 'info' }}">{{ message }}</div>
+  {% endif %}
+
+  <section class="readiness-grid mb-4">
+    {% for horizon in [10, 30, 60] %}
+      <div class="metric-card">
+        <div class="eyebrow">{{ horizon }}s horizon</div>
+        <div class="metric-value">{{ dashboard.labeled_by_horizon[horizon] }}</div>
+        <div class="muted">Clean labeled rows</div>
+      </div>
+    {% endfor %}
+    <div class="metric-card">
+      <div class="eyebrow">Advanced labels</div>
+      <div class="metric-value">{{ dashboard.advanced_labels_count }}</div>
+      <div class="muted">MFE / MAE ready</div>
+    </div>
+    <div class="metric-card">
+      <div class="eyebrow">Latest snapshot</div>
+      <div class="metric-date">{{ dashboard.latest_snapshot_at.strftime('%Y-%m-%d %H:%M:%S') if dashboard.latest_snapshot_at else '-' }}</div>
+      <div class="muted">Collected dataset time</div>
+    </div>
+  </section>
+
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
+        <h2>Train Offline Experiment</h2>
+        <div class="muted">Chronological 70/30 split using clean labeled snapshots only.</div>
+      </div>
+      <span class="badge text-bg-secondary">Historical analysis</span>
+    </div>
+    <form method="post" action="/ml-experiments/train">
+      <div class="row g-3">
+        <div class="col-lg-4">
+          <label class="form-label" for="title">Title</label>
+          <input class="form-control" id="title" name="title" maxlength="160" value="Direction edge experiment" required>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+          <label class="form-label" for="horizon_seconds">Horizon</label>
+          <select class="form-select" id="horizon_seconds" name="horizon_seconds">
+            <option value="10">10 seconds</option>
+            <option value="30" selected>30 seconds</option>
+            <option value="60">60 seconds</option>
+          </select>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+          <label class="form-label" for="model_type">Model</label>
+          <select class="form-select" id="model_type" name="model_type">
+            <option value="random_forest">Random forest</option>
+            <option value="gradient_boosting">Gradient boosting</option>
+          </select>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+          <label class="form-label" for="min_rows">Minimum rows</label>
+          <input class="form-control" id="min_rows" name="min_rows" type="number" min="10" value="1000" required>
+        </div>
+        <div class="col-sm-6 col-lg-2">
+          <label class="form-label" for="confidence_threshold">Confidence</label>
+          <input class="form-control" id="confidence_threshold" name="confidence_threshold" type="number" min="0.01" max="1" step="0.01" value="0.80" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Train Experiment</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel wide-panel">
+    <div class="section-heading">
+      <div>
+        <h2>Trained Experiments</h2>
+        <div class="muted">Metrics are measured on the newest 30% held-out rows.</div>
+      </div>
+    </div>
+    {% if dashboard.experiments %}
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle data-table">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Model</th>
+              <th>Horizon</th>
+              <th>Status</th>
+              <th>Rows</th>
+              <th>Accuracy</th>
+              <th>Precision long</th>
+              <th>Precision short</th>
+              <th>Created</th>
+              <th>Completed</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for experiment in dashboard.experiments %}
+              <tr>
+                <td>
+                  <strong>{{ experiment.title }}</strong>
+                  {% if experiment.error_message %}<div class="text-danger small">{{ experiment.error_message }}</div>{% endif %}
+                </td>
+                <td>{{ experiment.model_type|replace('_', ' ')|title }}</td>
+                <td>{{ experiment.horizon_seconds }}s</td>
+                <td>
+                  {% set status_color = 'success' if experiment.status == 'completed' else 'danger' if experiment.status == 'failed' else 'warning' %}
+                  <span class="badge text-bg-{{ status_color }}">{{ experiment.status }}</span>
+                </td>
+                <td>{{ experiment.train_rows_count or 0 }} / {{ experiment.test_rows_count or 0 }}</td>
+                <td>{{ experiment.accuracy|metric }}</td>
+                <td>{{ experiment.precision_long|metric }}</td>
+                <td>{{ experiment.precision_short|metric }}</td>
+                <td>{{ experiment.created_at.strftime('%Y-%m-%d %H:%M') if experiment.created_at else '-' }}</td>
+                <td>{{ experiment.completed_at.strftime('%Y-%m-%d %H:%M') if experiment.completed_at else '-' }}</td>
+                <td><a class="btn btn-sm btn-outline-light" href="/ml-experiments/{{ experiment.public_id }}">Details</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state embedded">
+        <h2>No experiments yet</h2>
+        <p>Train an offline direction experiment once enough labeled rows are ready.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

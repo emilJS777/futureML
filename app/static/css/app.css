@@ -351,6 +351,66 @@ dd {
   gap: 18px;
 }
 
+.readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.metric-card {
+  min-height: 126px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.metric-value {
+  margin: 8px 0 2px;
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.metric-date {
+  margin: 12px 0 6px;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.importance-list {
+  display: grid;
+  gap: 12px;
+}
+
+.importance-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(180px, 1fr) 90px;
+  align-items: center;
+  gap: 14px;
+}
+
+.importance-row code {
+  color: #bfdbfe;
+  overflow-wrap: anywhere;
+}
+
+.importance-track {
+  height: 8px;
+  overflow: hidden;
+  background: var(--panel-strong);
+  border-radius: 4px;
+}
+
+.importance-track span {
+  display: block;
+  height: 100%;
+  background: #4f8cff;
+}
+
+.backtest-table {
+  min-width: 1500px;
+}
+
 .compact-heading {
   font-size: 15px;
   margin-bottom: 12px;
@@ -414,5 +474,14 @@ dd {
   .pagination-bar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .importance-row {
+    grid-template-columns: 1fr 80px;
+  }
+
+  .importance-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 }

@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}{{ experiment.title }} | FuturesML{% endblock %}
+{% block heading %}{{ experiment.title }}{% endblock %}
+{% block actions %}
+  <a class="btn btn-outline-light" href="/ml-experiments">Back to Experiments</a>
+{% endblock %}
+{% block content %}
+  {% if message %}
+    <div class="alert alert-{{ status or 'info' }}">{{ message }}</div>
+  {% endif %}
+
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
+        <h2>Experiment Summary</h2>
+        <div class="muted">{{ experiment.model_type|replace('_', ' ')|title }} · {{ experiment.horizon_seconds }}s direction target</div>
+      </div>
+      {% set status_color = 'success' if experiment.status == 'completed' else 'danger' if experiment.status == 'failed' else 'warning' %}
+      <span class="badge text-bg-{{ status_color }}">{{ experiment.status }}</span>
+    </div>
+    {% if experiment.error_message %}
+      <div class="alert alert-danger">{{ experiment.error_message }}</div>
+    {% endif %}
+    <dl class="details-list wide">
+      <div><dt>Train rows</dt><dd>{{ experiment.train_rows_count or 0 }}</dd></div>
+      <div><dt>Test rows</dt><dd>{{ experiment.test_rows_count or 0 }}</dd></div>
+      <div><dt>Default confidence</dt><dd>{{ experiment.confidence_threshold|metric }}</dd></div>
+      <div><dt>Accuracy</dt><dd>{{ experiment.accuracy|metric }}</dd></div>
+      <div><dt>Started</dt><dd>{{ experiment.started_at or '-' }}</dd></div>
+      <div><dt>Completed</dt><dd>{{ experiment.completed_at or '-' }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="split-grid mb-4">
+    <div class="panel wide-panel">
+      <h2 class="mb-3">Class Metrics</h2>
+      <div class="table-responsive">
+        <table class="table table-dark data-table">
+          <thead><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead>
+          <tbody>
+            {% for label in ['long', 'short', 'flat'] %}
+              <tr>
+                <td><span class="badge text-bg-{{ 'success' if label == 'long' else 'danger' if label == 'short' else 'secondary' }}">{{ label }}</span></td>
+                <td>{{ experiment|attr('precision_' ~ label)|metric }}</td>
+                <td>{{ experiment|attr('recall_' ~ label)|metric }}</td>
+                <td>{{ experiment|attr('f1_' ~ label)|metric }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel wide-panel">
+      <h2 class="mb-3">Confusion Matrix</h2>
+      {% if experiment.confusion_matrix_json %}
+        <div class="table-responsive">
+          <table class="table table-dark data-table text-center">
+            <thead><tr><th>Actual \ Predicted</th><th>Long</th><th>Short</th><th>Flat</th></tr></thead>
+            <tbody>
+              {% for label in ['Long', 'Short', 'Flat'] %}
+                <tr><th>{{ label }}</th>{% for value in experiment.confusion_matrix_json[loop.index0] %}<td>{{ value }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="muted">No confusion matrix available.</div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
+        <h2>Feature Importance</h2>
+        <div class="muted">Top 20 features reported by the trained model.</div>
+      </div>
+    </div>
+    {% if experiment.feature_importance_json %}
+      <div class="importance-list">
+        {% set max_importance = experiment.feature_importance_json[0].importance %}
+        {% for item in experiment.feature_importance_json[:20] %}
+          <div class="importance-row">
+            <code>{{ item.feature }}</code>
+            <div class="importance-track"><span style="width: {{ (item.importance / max_importance * 100) if max_importance else 0 }}%"></span></div>
+            <strong>{{ item.importance|metric(6) }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="muted">Feature importance is available after successful training.</div>
+    {% endif %}
+  </section>
+
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
+        <h2>Run Shadow Backtest</h2>
+        <div class="muted">Historical simulation on held-out test rows only. No orders or live predictions.</div>
+      </div>
+    </div>
+    <form method="post" action="/ml-experiments/{{ experiment.public_id }}/run-backtest">
+      <div class="row g-3">
+        <div class="col-sm-4">
+          <label class="form-label" for="confidence_threshold">Confidence threshold</label>
+          <input class="form-control" id="confidence_threshold" name="confidence_threshold" type="number" min="0.01" max="1" step="0.01" value="{{ experiment.confidence_threshold|metric if experiment.confidence_threshold is not none else '0.8' }}" required>
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label" for="fees_percent">Fees %</label>
+          <input class="form-control" id="fees_percent" name="fees_percent" type="number" min="0" step="0.01" value="0.10" required>
+        </div>
+        <div class="col-sm-4">
+          <label class="form-label" for="slippage_percent">Slippage %</label>
+          <input class="form-control" id="slippage_percent" name="slippage_percent" type="number" min="0" step="0.01" value="0.05" required>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-warning" type="submit" {% if experiment.status != 'completed' %}disabled{% endif %}>Run Shadow Backtest</button>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel wide-panel">
+    <div class="section-heading">
+      <div>
+        <h2>Shadow Backtest Results</h2>
+        <div class="muted">Expectancy values are percentages per accepted historical signal.</div>
+      </div>
+    </div>
+    {% if backtest_rows %}
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle data-table backtest-table">
+          <thead>
+            <tr>
+              <th>Edge</th><th>Confidence</th><th>Signals</th><th>Long / Short</th><th>Win rate %</th>
+              <th>Avg win %</th><th>Avg loss %</th><th>Raw expectancy %</th><th>Net expectancy %</th>
+              <th>Max drawdown %</th><th>Profit factor</th><th>Fees + slip %</th><th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in backtest_rows %}
+              {% set backtest = row.backtest %}
+              <tr>
+                <td><span class="badge text-bg-{{ row.edge[1] }}">{{ row.edge[0] }}</span></td>
+                <td>{{ backtest.confidence_threshold|metric }}</td>
+                <td>{{ backtest.total_signals }}</td>
+                <td>{{ backtest.long_signals }} / {{ backtest.short_signals }}</td>
+                <td>{{ backtest.win_rate|metric }}</td>
+                <td>{{ backtest.avg_win_percent|metric }}</td>
+                <td>{{ backtest.avg_loss_percent|metric }}</td>
+                <td>{{ backtest.expectancy_percent|metric }}</td>
+                <td>{{ backtest.net_expectancy_percent|metric }}</td>
+                <td>{{ backtest.max_drawdown_percent|metric }}</td>
+                <td>{{ backtest.profit_factor|metric }}</td>
+                <td>{{ (backtest.fees_percent + backtest.slippage_percent)|metric }}</td>
+                <td>{{ backtest.created_at.strftime('%Y-%m-%d %H:%M') if backtest.created_at else '-' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state embedded">
+        <h2>No shadow backtests yet</h2>
+        <p>Run a historical simulation after this experiment completes.</p>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}
