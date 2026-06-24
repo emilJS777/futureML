@@ -95,6 +95,147 @@
   <section class="panel wide-panel mb-4">
     <div class="section-heading">
       <div>
+        <h2>Probability Diagnostics</h2>
+        <div class="muted">Maximum class probabilities on the held-out rows used by shadow backtesting.</div>
+      </div>
+      {% if probability_diagnostics.available %}
+        <span class="badge text-bg-info">{{ probability_diagnostics.distribution.count }} test rows</span>
+      {% endif %}
+    </div>
+
+    {% if probability_diagnostics.available %}
+      {% set distribution = probability_diagnostics.distribution %}
+      <div class="probability-summary mb-4">
+        <div><span>Minimum</span><strong>{{ distribution.minimum|metric(4) }}</strong></div>
+        <div><span>Mean</span><strong>{{ distribution.mean|metric(4) }}</strong></div>
+        <div><span>P25</span><strong>{{ distribution.p25|metric(4) }}</strong></div>
+        <div><span>Median</span><strong>{{ distribution.median|metric(4) }}</strong></div>
+        <div><span>P75</span><strong>{{ distribution.p75|metric(4) }}</strong></div>
+        <div><span>P90</span><strong>{{ distribution.p90|metric(4) }}</strong></div>
+        <div><span>Maximum</span><strong>{{ distribution.maximum|metric(4) }}</strong></div>
+      </div>
+
+      {% set threshold_06 = probability_diagnostics.focus_thresholds['0_6'] %}
+      {% set threshold_08 = probability_diagnostics.focus_thresholds['0_8'] %}
+      <div class="alert alert-info probability-explanation">
+        At <strong>0.80</strong>, {{ threshold_08.all_rows }} rows clear confidence,
+        but only <strong>{{ threshold_08.actionable_rows }}</strong> predict long/short.
+        At <strong>0.60</strong>, {{ threshold_06.all_rows }} rows clear confidence,
+        with <strong>{{ threshold_06.actionable_rows }}</strong> actionable predictions.
+        Confident flat predictions are skipped by shadow backtest.
+      </div>
+
+      <div class="split-grid mb-4">
+        <div>
+          <h2 class="compact-heading">Confidence Threshold Funnel</h2>
+          <div class="table-responsive">
+            <table class="table table-dark table-hover data-table">
+              <thead>
+                <tr>
+                  <th>Threshold</th>
+                  <th>All above</th>
+                  <th>Actionable</th>
+                  <th>Flat</th>
+                  <th>Long</th>
+                  <th>Short</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in probability_diagnostics.threshold_counts %}
+                  <tr class="{{ 'probability-focus-row' if row.threshold in [0.6, 0.8] else '' }}">
+                    <td><strong>&ge; {{ row.threshold|metric(2) }}</strong></td>
+                    <td>{{ row.all_rows }}</td>
+                    <td>{{ row.actionable_rows }}</td>
+                    <td>{{ row.flat_rows }}</td>
+                    <td>{{ row.long_rows }}</td>
+                    <td>{{ row.short_rows }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="muted small mt-2">
+            Shadow signals equal actionable rows: confidence above threshold and prediction is long or short.
+          </div>
+        </div>
+
+        <div>
+          <h2 class="compact-heading">Max Probability Histogram</h2>
+          <div class="probability-histogram">
+            {% for bin in probability_diagnostics.histogram %}
+              <div class="histogram-row">
+                <span class="histogram-label">{{ bin.start|metric(1) }}-{{ bin.end|metric(1) }}</span>
+                <div class="histogram-track">
+                  <span style="width: {{ bin.width_percent }}%"></span>
+                </div>
+                <strong>{{ bin.count }}</strong>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <div class="section-heading compact-section-heading">
+        <div>
+          <h2>Top Confident Predictions</h2>
+          <div class="muted">Highest max probabilities with predicted and actual outcomes.</div>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark table-hover align-middle data-table probability-predictions-table">
+          <thead>
+            <tr>
+              <th>Captured</th>
+              <th>Exchange</th>
+              <th>Symbol</th>
+              <th>Prediction</th>
+              <th>Actual</th>
+              <th>Correct</th>
+              <th>Max probability</th>
+              <th>P long</th>
+              <th>P short</th>
+              <th>P flat</th>
+              <th>Future return %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in probability_diagnostics.top_predictions %}
+              <tr>
+                <td>{{ row.captured_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td>{{ row.exchange_code }}</td>
+                <td>{{ row.symbol }}</td>
+                <td>
+                  <span class="badge text-bg-{{ 'success' if row.predicted_label == 'long' else 'danger' if row.predicted_label == 'short' else 'secondary' }}">
+                    {{ row.predicted_label }}
+                  </span>
+                </td>
+                <td>
+                  <span class="badge text-bg-{{ 'success' if row.actual_label == 'long' else 'danger' if row.actual_label == 'short' else 'secondary' }}">
+                    {{ row.actual_label }}
+                  </span>
+                </td>
+                <td><span class="badge text-bg-{{ 'success' if row.is_correct else 'danger' }}">{{ 'yes' if row.is_correct else 'no' }}</span></td>
+                <td><strong>{{ row.max_probability|metric(4) }}</strong></td>
+                <td>{{ row.long_probability|metric(4) }}</td>
+                <td>{{ row.short_probability|metric(4) }}</td>
+                <td>{{ row.flat_probability|metric(4) }}</td>
+                <td>{{ row.future_return_percent|metric(6) }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state embedded">
+        <h2>Probability diagnostics unavailable</h2>
+        <p>{{ probability_diagnostics.error }}</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
         <h2>Run Shadow Backtest</h2>
         <div class="muted">Historical simulation on held-out test rows only. No orders or live predictions.</div>
       </div>

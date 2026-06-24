@@ -11,7 +11,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import SessionLocal
 from app.models.ml_experiment import MlExperiment
-from app.services.ml_experiment_service import get_experiment_dashboard_data, train_direction_experiment
+from app.services.ml_experiment_service import (
+    get_experiment_dashboard_data,
+    get_probability_diagnostics,
+    train_direction_experiment,
+)
 from app.services.ml_shadow_backtest_service import backtest_edge_status, run_shadow_backtest
 
 
@@ -114,11 +118,13 @@ def experiment_details(
     message: str | None = Query(None),
 ):
     experiment = _load_experiment(public_id)
+    probability_diagnostics = get_probability_diagnostics(experiment.id)
     return templates.TemplateResponse(
         "ml_experiments/details.html",
         {
             "request": request,
             "experiment": experiment,
+            "probability_diagnostics": probability_diagnostics,
             "backtest_rows": [
                 {"backtest": backtest, "edge": backtest_edge_status(backtest)}
                 for backtest in experiment.shadow_backtests

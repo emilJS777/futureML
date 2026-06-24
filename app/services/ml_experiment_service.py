@@ -13,6 +13,7 @@ from app.services.ml_training_service import FEATURE_COLUMNS
 
 CLASS_LABELS = ["long", "short", "flat"]
 SUPPORTED_MODEL_TYPES = {"random_forest", "gradient_boosting"}
+PROBABILITY_THRESHOLDS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9]
 
 
 def _to_decimal(value: float | None) -> Decimal | None:
@@ -63,6 +64,159 @@ def get_experiment_dashboard_data() -> dict:
             "experiments": list(
                 db.scalars(select(MlExperiment).order_by(MlExperiment.created_at.desc()).limit(100))
             ),
+        }
+    finally:
+        db.close()
+
+
+def _build_probability_diagnostics(rows, probabilities, predicted_classes) -> dict:
+    import numpy as np
+
+    class_names = [str(value) for value in predicted_classes]
+    predictions = []
+    for (snapshot, label), row_probabilities in zip(rows, probabilities, strict=True):
+        best_index = int(np.argmax(row_probabilities))
+        predicted_label = class_names[best_index]
+        actual_label = str(label.direction_label)
+        probability_by_class = {
+            class_name: float(row_probabilities[index])
+            for index, class_name in enumerate(class_names)
+        }
+        predictions.append(
+            {
+                "snapshot_public_id": str(snapshot.public_id),
+                "captured_at": snapshot.captured_at,
+                "exchange_code": snapshot.exchange_code,
+                "symbol": snapshot.symbol,
+                "predicted_label": predicted_label,
+                "actual_label": actual_label,
+                "is_correct": predicted_label == actual_label,
+                "max_probability": float(row_probabilities[best_index]),
+                "long_probability": probability_by_class.get("long", 0.0),
+                "short_probability": probability_by_class.get("short", 0.0),
+                "flat_probability": probability_by_class.get("flat", 0.0),
+                "future_return_percent": float(label.future_return_percent)
+                if label.future_return_percent is not None
+                else None,
+            }
+        )
+
+    max_probabilities = np.asarray([row["max_probability"] for row in predictions], dtype=float)
+    histogram_edges = np.linspace(0, 1, 11)
+    histogram_counts, _ = np.histogram(max_probabilities, bins=histogram_edges)
+    histogram = [
+        {
+            "start": float(histogram_edges[index]),
+            "end": float(histogram_edges[index + 1]),
+            "count": int(count),
+        }
+        for index, count in enumerate(histogram_counts)
+    ]
+    max_histogram_count = max((item["count"] for item in histogram), default=0)
+    for item in histogram:
+        item["width_percent"] = (
+            (item["count"] / max_histogram_count) * 100 if max_histogram_count else 0
+        )
+
+    threshold_counts = []
+    for threshold in PROBABILITY_THRESHOLDS:
+        above = [row for row in predictions if row["max_probability"] >= threshold]
+        actionable = [row for row in above if row["predicted_label"] in {"long", "short"}]
+        threshold_counts.append(
+            {
+                "threshold": threshold,
+                "all_rows": len(above),
+                "actionable_rows": len(actionable),
+                "flat_rows": len(above) - len(actionable),
+                "long_rows": sum(row["predicted_label"] == "long" for row in actionable),
+                "short_rows": sum(row["predicted_label"] == "short" for row in actionable),
+            }
+        )
+
+    distribution = {
+        "count": len(predictions),
+        "minimum": float(np.min(max_probabilities)) if len(max_probabilities) else None,
+        "mean": float(np.mean(max_probabilities)) if len(max_probabilities) else None,
+        "p25": float(np.percentile(max_probabilities, 25)) if len(max_probabilities) else None,
+        "median": float(np.median(max_probabilities)) if len(max_probabilities) else None,
+        "p75": float(np.percentile(max_probabilities, 75)) if len(max_probabilities) else None,
+        "p90": float(np.percentile(max_probabilities, 90)) if len(max_probabilities) else None,
+        "maximum": float(np.max(max_probabilities)) if len(max_probabilities) else None,
+    }
+    return {
+        "available": True,
+        "distribution": distribution,
+        "threshold_counts": threshold_counts,
+        "focus_thresholds": {
+            "0_6": next(row for row in threshold_counts if row["threshold"] == 0.6),
+            "0_8": next(row for row in threshold_counts if row["threshold"] == 0.8),
+        },
+        "histogram": histogram,
+        "top_predictions": sorted(
+            predictions,
+            key=lambda row: row["max_probability"],
+            reverse=True,
+        )[:25],
+    }
+
+
+def get_probability_diagnostics(experiment_id: int) -> dict:
+    import joblib
+    import numpy as np
+    import pandas as pd
+
+    db = SessionLocal()
+    try:
+        experiment = db.get(MlExperiment, experiment_id)
+        if experiment is None:
+            raise ValueError("Experiment was not found.")
+        if experiment.status != "completed" or not experiment.model_path:
+            return {"available": False, "error": "Diagnostics are available after successful training."}
+
+        model_path = Path(experiment.model_path)
+        if not model_path.exists():
+            return {"available": False, "error": f"Model artifact is missing: {model_path}."}
+
+        artifact = joblib.load(model_path)
+        classifier = artifact["model"]
+        feature_columns = artifact["feature_columns"]
+        test_snapshot_ids = artifact.get("test_snapshot_ids", [])
+        if not test_snapshot_ids:
+            return {"available": False, "error": "Model artifact has no held-out test rows."}
+
+        rows = list(
+            db.execute(
+                select(MlFeatureSnapshot, MlSnapshotLabel)
+                .join(MlSnapshotLabel, MlSnapshotLabel.feature_snapshot_id == MlFeatureSnapshot.id)
+                .where(
+                    MlFeatureSnapshot.id.in_(test_snapshot_ids),
+                    MlSnapshotLabel.horizon_seconds == experiment.horizon_seconds,
+                    MlSnapshotLabel.is_labeled.is_(True),
+                    MlSnapshotLabel.direction_label.is_not(None),
+                    MlSnapshotLabel.future_return_percent.is_not(None),
+                )
+                .order_by(MlFeatureSnapshot.captured_at.asc(), MlFeatureSnapshot.id.asc())
+            )
+        )
+        if not rows:
+            return {"available": False, "error": "No labeled held-out rows remain for diagnostics."}
+
+        feature_records = [
+            {column: getattr(snapshot, column) for column in feature_columns}
+            for snapshot, _label in rows
+        ]
+        features = (
+            pd.DataFrame(feature_records, columns=feature_columns)
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .fillna(0)
+        )
+        probabilities = classifier.predict_proba(features)
+        return _build_probability_diagnostics(rows, probabilities, classifier.classes_)
+    except Exception as exc:
+        return {
+            "available": False,
+            "error": str(exc)[:1000] or exc.__class__.__name__,
         }
     finally:
         db.close()
