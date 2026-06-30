@@ -377,6 +377,22 @@ dd {
   font-weight: 750;
 }
 
+.compact-diagnostics-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.eligibility-table {
+  min-width: 1120px;
+}
+
+.diagnostic-note {
+  padding: 12px 14px;
+  color: #dbeafe;
+  background: rgba(79, 140, 255, 0.12);
+  border: 1px solid rgba(147, 197, 253, 0.24);
+  border-radius: 8px;
+}
+
 .importance-list {
   display: grid;
   gap: 12px;

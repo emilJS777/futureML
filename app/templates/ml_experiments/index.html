@@ -29,6 +29,69 @@
   <section class="panel wide-panel mb-4">
     <div class="section-heading">
       <div>
+        <h2>Dataset Eligibility Diagnostics</h2>
+        <div class="muted">Shows why collected snapshots do or do not qualify for offline experiment training.</div>
+      </div>
+      <span class="badge text-bg-secondary">Quality >= {{ eligibility.data_quality_threshold }}</span>
+    </div>
+    <div class="readiness-grid compact-diagnostics-grid mb-3">
+      <div class="metric-card">
+        <div class="eyebrow">Feature snapshots</div>
+        <div class="metric-value">{{ eligibility.total_feature_snapshots }}</div>
+        <div class="muted">All collected ML rows</div>
+      </div>
+      <div class="metric-card">
+        <div class="eyebrow">Labels</div>
+        <div class="metric-value">{{ eligibility.total_labels }}</div>
+        <div class="muted">All horizons combined</div>
+      </div>
+      <div class="metric-card">
+        <div class="eyebrow">Features</div>
+        <div class="metric-value">{{ eligibility.feature_columns_count }}</div>
+        <div class="muted">Training columns</div>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-dark align-middle data-table eligibility-table">
+        <thead>
+          <tr>
+            <th>Horizon</th>
+            <th>Total labels</th>
+            <th>Labeled rows</th>
+            <th>Excluded: missing labels</th>
+            <th>Excluded: data quality</th>
+            <th>Excluded: null features</th>
+            <th>Rows with null features</th>
+            <th>Final eligible rows</th>
+            <th>Estimated train / test</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for horizon in [10, 30, 60] %}
+            {% set row = eligibility.by_horizon[horizon] %}
+            <tr>
+              <td><span class="badge text-bg-primary">{{ horizon }}s</span></td>
+              <td>{{ row.total_labels }}</td>
+              <td>{{ row.total_labeled_rows }}</td>
+              <td>{{ row.rows_excluded_by_missing_labels }}</td>
+              <td>{{ row.rows_excluded_by_data_quality_filter }}</td>
+              <td>{{ row.rows_excluded_by_null_feature_values }}</td>
+              <td>{{ row.rows_with_null_feature_values }}</td>
+              <td><strong>{{ row.final_eligible_training_rows }}</strong></td>
+              <td>{{ row.estimated_train_rows }} / {{ row.estimated_test_rows }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="diagnostic-note mt-3">
+      {{ eligibility.null_feature_policy }} The experiment trainer uses final eligible rows, then makes a chronological 70/30 split.
+    </div>
+  </section>
+
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
         <h2>Train Offline Experiment</h2>
         <div class="muted">Chronological 70/30 split using clean labeled snapshots only.</div>
       </div>

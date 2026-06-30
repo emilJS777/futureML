@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.database import SessionLocal
 from app.models.ml_experiment import MlExperiment
@@ -14,6 +14,8 @@ from app.services.ml_training_service import FEATURE_COLUMNS
 CLASS_LABELS = ["long", "short", "flat"]
 SUPPORTED_MODEL_TYPES = {"random_forest", "gradient_boosting"}
 PROBABILITY_THRESHOLDS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9]
+EXPERIMENT_HORIZONS = (10, 30, 60)
+MIN_EXPERIMENT_DATA_QUALITY_SCORE = 60
 
 
 def _to_decimal(value: float | None) -> Decimal | None:
@@ -28,6 +30,126 @@ def _set_class_metrics(experiment: MlExperiment, report: dict) -> None:
         setattr(experiment, f"f1_{label}", _to_decimal(metrics.get("f1-score")))
 
 
+def _count_query(db, query) -> int:
+    return db.scalar(query) or 0
+
+
+def _feature_null_filter():
+    return or_(*(getattr(MlFeatureSnapshot, column).is_(None) for column in FEATURE_COLUMNS))
+
+
+def _build_horizon_eligibility(db, horizon: int, total_feature_snapshots: int) -> dict:
+    valid_label_conditions = (
+        MlSnapshotLabel.horizon_seconds == horizon,
+        MlSnapshotLabel.is_labeled.is_(True),
+        MlSnapshotLabel.direction_label.is_not(None),
+        MlSnapshotLabel.future_return_percent.is_not(None),
+    )
+    labeled_rows = _count_query(
+        db,
+        select(func.count())
+        .select_from(MlSnapshotLabel)
+        .where(*valid_label_conditions),
+    )
+    missing_label_rows = _count_query(
+        db,
+        select(func.count())
+        .select_from(MlFeatureSnapshot)
+        .outerjoin(
+            MlSnapshotLabel,
+            (MlSnapshotLabel.feature_snapshot_id == MlFeatureSnapshot.id)
+            & (MlSnapshotLabel.horizon_seconds == horizon),
+        )
+        .where(
+            or_(
+                MlSnapshotLabel.id.is_(None),
+                MlSnapshotLabel.is_labeled.is_not(True),
+                MlSnapshotLabel.direction_label.is_(None),
+                MlSnapshotLabel.future_return_percent.is_(None),
+            )
+        ),
+    )
+    data_quality_excluded_rows = _count_query(
+        db,
+        select(func.count())
+        .select_from(MlSnapshotLabel)
+        .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+        .where(
+            *valid_label_conditions,
+            or_(
+                MlFeatureSnapshot.data_quality_score.is_(None),
+                MlFeatureSnapshot.data_quality_score < MIN_EXPERIMENT_DATA_QUALITY_SCORE,
+            ),
+        ),
+    )
+    eligible_query = (
+        select(func.count())
+        .select_from(MlSnapshotLabel)
+        .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+        .where(
+            *valid_label_conditions,
+            MlFeatureSnapshot.data_quality_score >= MIN_EXPERIMENT_DATA_QUALITY_SCORE,
+        )
+    )
+    final_eligible_rows = _count_query(db, eligible_query)
+    rows_with_null_feature_values = _count_query(
+        db,
+        select(func.count())
+        .select_from(MlSnapshotLabel)
+        .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+        .where(
+            *valid_label_conditions,
+            MlFeatureSnapshot.data_quality_score >= MIN_EXPERIMENT_DATA_QUALITY_SCORE,
+            _feature_null_filter(),
+        ),
+    )
+    train_rows = int(final_eligible_rows * 0.7)
+    test_rows = final_eligible_rows - train_rows
+    return {
+        "horizon": horizon,
+        "total_feature_snapshots": total_feature_snapshots,
+        "total_labels": _count_query(
+            db,
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.horizon_seconds == horizon),
+        ),
+        "total_labeled_rows": labeled_rows,
+        "rows_excluded_by_missing_labels": missing_label_rows,
+        "rows_excluded_by_data_quality_filter": data_quality_excluded_rows,
+        "rows_excluded_by_null_feature_values": 0,
+        "rows_with_null_feature_values": rows_with_null_feature_values,
+        "final_eligible_training_rows": final_eligible_rows,
+        "estimated_train_rows": train_rows,
+        "estimated_test_rows": test_rows,
+    }
+
+
+def get_dataset_eligibility_diagnostics() -> dict:
+    db = SessionLocal()
+    try:
+        total_feature_snapshots = _count_query(
+            db,
+            select(func.count()).select_from(MlFeatureSnapshot),
+        )
+        total_labels = _count_query(
+            db,
+            select(func.count()).select_from(MlSnapshotLabel),
+        )
+        by_horizon = {
+            horizon: _build_horizon_eligibility(db, horizon, total_feature_snapshots)
+            for horizon in EXPERIMENT_HORIZONS
+        }
+        return {
+            "total_feature_snapshots": total_feature_snapshots,
+            "total_labels": total_labels,
+            "by_horizon": by_horizon,
+            "data_quality_threshold": MIN_EXPERIMENT_DATA_QUALITY_SCORE,
+            "feature_columns_count": len(FEATURE_COLUMNS),
+            "null_feature_policy": "Current experiment training keeps eligible rows and fills null feature values with 0.",
+        }
+    finally:
+        db.close()
+
+
 def get_experiment_dashboard_data() -> dict:
     db = SessionLocal()
     try:
@@ -40,11 +162,12 @@ def get_experiment_dashboard_data() -> dict:
                     MlSnapshotLabel.horizon_seconds == horizon,
                     MlSnapshotLabel.is_labeled.is_(True),
                     MlSnapshotLabel.direction_label.is_not(None),
-                    MlFeatureSnapshot.data_quality_score >= 60,
+                    MlSnapshotLabel.future_return_percent.is_not(None),
+                    MlFeatureSnapshot.data_quality_score >= MIN_EXPERIMENT_DATA_QUALITY_SCORE,
                 )
             )
             or 0
-            for horizon in (10, 30, 60)
+            for horizon in EXPERIMENT_HORIZONS
         }
         advanced_labels_count = db.scalar(
             select(func.count())

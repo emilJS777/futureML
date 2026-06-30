@@ -12,6 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import SessionLocal
 from app.models.ml_experiment import MlExperiment
 from app.services.ml_experiment_service import (
+    get_dataset_eligibility_diagnostics,
     get_experiment_dashboard_data,
     get_probability_diagnostics,
     train_direction_experiment,
@@ -54,6 +55,7 @@ def ml_experiments_dashboard(
         {
             "request": request,
             "dashboard": get_experiment_dashboard_data(),
+            "eligibility": get_dataset_eligibility_diagnostics(),
             "status": status,
             "message": message,
         },
