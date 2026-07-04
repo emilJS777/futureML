@@ -3,7 +3,7 @@ import logging
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Form, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
@@ -12,11 +12,12 @@ from sqlalchemy.orm import selectinload
 from app.core.database import SessionLocal
 from app.models.ml_experiment import MlExperiment
 from app.services.ml_experiment_service import (
+    create_pending_direction_experiment,
     get_dataset_eligibility_diagnostics,
     get_experiment_dashboard_data,
     get_probability_diagnostics,
     get_training_dataset_diagnostics,
-    train_direction_experiment,
+    run_direction_experiment_training,
 )
 from app.services.ml_shadow_backtest_service import backtest_edge_status, run_shadow_backtest
 
@@ -65,6 +66,7 @@ def ml_experiments_dashboard(
 
 @router.post("/ml-experiments/train")
 def train_experiment(
+    background_tasks: BackgroundTasks,
     title: str = Form(...),
     horizon_seconds: int = Form(30),
     model_type: str = Form("random_forest"),
@@ -72,24 +74,22 @@ def train_experiment(
     confidence_threshold: float = Form(0.8),
 ):
     try:
-        result = train_direction_experiment(
+        experiment = create_pending_direction_experiment(
             title=title,
             horizon_seconds=horizon_seconds,
             model_type=model_type,
             min_rows=min_rows,
             confidence_threshold=confidence_threshold,
         )
+        background_tasks.add_task(run_direction_experiment_training, experiment.id)
     except Exception as exc:
         logger.exception("ML experiment training request failed before an experiment could complete.")
         return _redirect("/ml-experiments", "danger", f"Experiment could not start: {exc}")
-    experiment = result["experiment"]
-    if result["success"]:
-        return _redirect(
-            f"/ml-experiments/{experiment.public_id}",
-            "success",
-            str(result["message"]),
-        )
-    return _redirect("/ml-experiments", "danger", str(result["message"]))
+    return _redirect(
+        f"/ml-experiments/{experiment.public_id}",
+        "success",
+        "Experiment queued. Training is running in the background; you can close the browser.",
+    )
 
 
 def _load_experiment(public_id: str) -> MlExperiment:

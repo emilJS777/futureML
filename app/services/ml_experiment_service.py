@@ -473,13 +473,12 @@ def get_training_dataset_diagnostics(experiment_id: int) -> dict:
         db.close()
 
 
-def train_direction_experiment(
+def _validate_experiment_request(
     horizon_seconds: int = 30,
     model_type: str = "random_forest",
     min_rows: int = 1000,
     confidence_threshold: float = 0.8,
-    title: str | None = None,
-) -> dict[str, object]:
+) -> None:
     if model_type not in SUPPORTED_MODEL_TYPES:
         raise ValueError(f"Unsupported model type: {model_type}.")
     if horizon_seconds not in {10, 30, 60}:
@@ -489,19 +488,48 @@ def train_direction_experiment(
     if not 0 < confidence_threshold <= 1:
         raise ValueError("Confidence threshold must be greater than 0 and at most 1.")
 
+
+def create_pending_direction_experiment(
+    horizon_seconds: int = 30,
+    model_type: str = "random_forest",
+    min_rows: int = 1000,
+    confidence_threshold: float = 0.8,
+    title: str | None = None,
+) -> MlExperiment:
+    _validate_experiment_request(horizon_seconds, model_type, min_rows, confidence_threshold)
     db = SessionLocal()
-    experiment = MlExperiment(
-        title=(title or f"Direction experiment {horizon_seconds}s").strip()[:160],
-        status="pending",
-        model_type=model_type,
-        target_type="direction_label",
-        horizon_seconds=horizon_seconds,
-        confidence_threshold=_to_decimal(confidence_threshold),
-        min_rows=min_rows,
-    )
-    db.add(experiment)
-    db.commit()
-    db.refresh(experiment)
+    try:
+        experiment = MlExperiment(
+            title=(title or f"Direction experiment {horizon_seconds}s").strip()[:160],
+            status="pending",
+            model_type=model_type,
+            target_type="direction_label",
+            horizon_seconds=horizon_seconds,
+            confidence_threshold=_to_decimal(confidence_threshold),
+            min_rows=min_rows,
+        )
+        db.add(experiment)
+        db.commit()
+        db.refresh(experiment)
+        db.expunge(experiment)
+        return experiment
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
+    db = SessionLocal()
+    experiment = db.get(MlExperiment, experiment_id)
+    if experiment is None:
+        logger.error("ML experiment background training skipped: experiment_id=%s was not found.", experiment_id)
+        db.close()
+        return {"success": False, "message": "Experiment was not found.", "experiment": None}
+    horizon_seconds = experiment.horizon_seconds
+    model_type = experiment.model_type
+    min_rows = experiment.min_rows
 
     try:
         import joblib
@@ -676,3 +704,20 @@ def train_direction_experiment(
         return {"success": False, "message": experiment.error_message, "experiment": experiment}
     finally:
         db.close()
+
+
+def train_direction_experiment(
+    horizon_seconds: int = 30,
+    model_type: str = "random_forest",
+    min_rows: int = 1000,
+    confidence_threshold: float = 0.8,
+    title: str | None = None,
+) -> dict[str, object]:
+    experiment = create_pending_direction_experiment(
+        title=title,
+        horizon_seconds=horizon_seconds,
+        model_type=model_type,
+        min_rows=min_rows,
+        confidence_threshold=confidence_threshold,
+    )
+    return run_direction_experiment_training(experiment.id)
