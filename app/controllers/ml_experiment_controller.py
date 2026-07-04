@@ -15,6 +15,7 @@ from app.services.ml_experiment_service import (
     get_dataset_eligibility_diagnostics,
     get_experiment_dashboard_data,
     get_probability_diagnostics,
+    get_training_dataset_diagnostics,
     train_direction_experiment,
 )
 from app.services.ml_shadow_backtest_service import backtest_edge_status, run_shadow_backtest
@@ -121,12 +122,14 @@ def experiment_details(
 ):
     experiment = _load_experiment(public_id)
     probability_diagnostics = get_probability_diagnostics(experiment.id)
+    training_diagnostics = get_training_dataset_diagnostics(experiment.id)
     return templates.TemplateResponse(
         "ml_experiments/details.html",
         {
             "request": request,
             "experiment": experiment,
             "probability_diagnostics": probability_diagnostics,
+            "training_diagnostics": training_diagnostics,
             "backtest_rows": [
                 {"backtest": backtest, "edge": backtest_edge_status(backtest)}
                 for backtest in experiment.shadow_backtests

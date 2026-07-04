@@ -2,7 +2,8 @@ import logging
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -17,6 +18,19 @@ TP_SL_THRESHOLDS = {
     "0_5": Decimal("0.5"),
     "1_0": Decimal("1.0"),
 }
+DEFAULT_BACKFILL_HORIZONS = (10, 30, 60)
+
+
+def _pending_label_ready_filter(now: datetime):
+    return or_(
+        *(
+            and_(
+                MlSnapshotLabel.horizon_seconds == horizon,
+                MlFeatureSnapshot.captured_at <= now - timedelta(seconds=horizon),
+            )
+            for horizon in DEFAULT_BACKFILL_HORIZONS
+        )
+    )
 
 
 def _advanced_labels_ready(label: MlSnapshotLabel) -> bool:
@@ -44,9 +58,9 @@ def _apply_label_calculation(
         return False
 
     target_time = snapshot.captured_at + timedelta(seconds=label.horizon_seconds)
-    future_snapshots = list(
-        db.scalars(
-            select(MlFeatureSnapshot)
+    future_prices = list(
+        db.execute(
+            select(MlFeatureSnapshot.mid_price)
             .where(
                 MlFeatureSnapshot.exchange_credential_id == snapshot.exchange_credential_id,
                 MlFeatureSnapshot.symbol == snapshot.symbol,
@@ -57,18 +71,18 @@ def _apply_label_calculation(
             .order_by(MlFeatureSnapshot.captured_at.asc())
         )
     )
-    if not future_snapshots:
+    if not future_prices:
         return False
 
     returns = [
-        (future_snapshot.mid_price - snapshot.mid_price) / snapshot.mid_price * Decimal("100")
-        for future_snapshot in future_snapshots
-        if future_snapshot.mid_price is not None
+        (future_price[0] - snapshot.mid_price) / snapshot.mid_price * Decimal("100")
+        for future_price in future_prices
+        if future_price[0] is not None
     ]
     if not returns:
         return False
 
-    final_snapshot = future_snapshots[-1]
+    final_mid_price = future_prices[-1][0]
     future_return = returns[-1]
     long_mfe = max(returns)
     long_mae = min(returns)
@@ -82,7 +96,7 @@ def _apply_label_calculation(
     else:
         direction = "flat"
 
-    label.future_mid_price = final_snapshot.mid_price
+    label.future_mid_price = final_mid_price
     label.future_return_percent = future_return
     label.direction_label = direction
     label.long_would_win = future_return > 0
@@ -110,35 +124,125 @@ def _apply_label_calculation(
 
 
 def process_pending_labels() -> dict[str, int]:
+    return backfill_pending_labels_in_batches(batch_size=1000, max_batches=1)
+
+
+def count_eligible_pending_labels() -> int:
+    db = SessionLocal()
+    try:
+        now = datetime.now(UTC)
+        return db.scalar(
+            select(func.count())
+            .select_from(MlSnapshotLabel)
+            .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+            .where(
+                MlSnapshotLabel.is_labeled.is_(False),
+                _pending_label_ready_filter(now),
+            )
+        ) or 0
+    finally:
+        db.close()
+
+
+def count_incomplete_advanced_labels() -> int:
+    db = SessionLocal()
+    try:
+        return db.scalar(
+            select(func.count())
+            .select_from(MlSnapshotLabel)
+            .where(
+                MlSnapshotLabel.is_labeled.is_(True),
+                or_(
+                    MlSnapshotLabel.long_mfe_percent.is_(None),
+                    MlSnapshotLabel.long_mae_percent.is_(None),
+                    MlSnapshotLabel.short_mfe_percent.is_(None),
+                    MlSnapshotLabel.short_mae_percent.is_(None),
+                    MlSnapshotLabel.expected_long_return_percent.is_(None),
+                    MlSnapshotLabel.expected_short_return_percent.is_(None),
+                ),
+            )
+        ) or 0
+    finally:
+        db.close()
+
+
+def backfill_pending_labels_in_batches(batch_size: int = 1000, max_batches: int = 10) -> dict[str, int]:
+    batch_size = max(1, min(batch_size, 5000))
+    max_batches = max(1, min(max_batches, 100))
     db = SessionLocal()
     processed = 0
     skipped = 0
+    batches_run = 0
+    skipped_label_ids: set[int] = set()
     try:
-        now = datetime.now(UTC)
-        labels = list(
-            db.scalars(
-                select(MlSnapshotLabel)
-                .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
-                .where(MlSnapshotLabel.is_labeled.is_(False))
-                .order_by(MlSnapshotLabel.created_at)
-                .limit(1000)
-            )
-        )
         settings = get_settings()
         long_threshold = Decimal(str(settings.label_long_threshold_percent))
         short_threshold = Decimal(str(settings.label_short_threshold_percent))
 
-        for label in labels:
-            snapshot = label.feature_snapshot
-            if _apply_label_calculation(db, label, snapshot, now, long_threshold, short_threshold):
-                processed += 1
-            else:
-                skipped += 1
+        for _ in range(max_batches):
+            now = datetime.now(UTC)
+            query = (
+                select(MlSnapshotLabel)
+                .options(selectinload(MlSnapshotLabel.feature_snapshot))
+                .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+                .where(
+                    MlSnapshotLabel.is_labeled.is_(False),
+                    _pending_label_ready_filter(now),
+                )
+                .order_by(MlFeatureSnapshot.captured_at.asc(), MlSnapshotLabel.horizon_seconds.asc())
+                .limit(batch_size)
+            )
+            if skipped_label_ids:
+                query = query.where(MlSnapshotLabel.id.not_in(skipped_label_ids))
+            labels = list(db.scalars(query))
+            if not labels:
+                break
 
-        db.commit()
-        return {"processed": processed, "skipped": skipped}
+            batch_processed = 0
+            batch_skipped = 0
+            for label in labels:
+                if _apply_label_calculation(db, label, label.feature_snapshot, now, long_threshold, short_threshold):
+                    batch_processed += 1
+                else:
+                    batch_skipped += 1
+                    skipped_label_ids.add(label.id)
+
+            db.commit()
+            batches_run += 1
+            processed += batch_processed
+            skipped += batch_skipped
+            logger.info(
+                "ML pending label backfill batch complete: batch=%s processed=%s skipped=%s total_processed=%s.",
+                batches_run,
+                batch_processed,
+                batch_skipped,
+                processed,
+            )
+            if batch_processed == 0:
+                break
+
+        remaining_pending = db.scalar(
+            select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(False))
+        ) or 0
+        remaining_eligible_pending = db.scalar(
+            select(func.count())
+            .select_from(MlSnapshotLabel)
+            .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+            .where(
+                MlSnapshotLabel.is_labeled.is_(False),
+                _pending_label_ready_filter(datetime.now(UTC)),
+            )
+        ) or 0
+        return {
+            "processed": processed,
+            "skipped": skipped,
+            "batches_run": batches_run,
+            "batch_size": batch_size,
+            "remaining_pending": remaining_pending,
+            "remaining_eligible_pending": remaining_eligible_pending,
+        }
     except Exception:
-        logger.exception("Processing ML labels failed.")
+        logger.exception("Backfilling pending ML labels failed.")
         db.rollback()
         raise
     finally:
@@ -157,8 +261,19 @@ def backfill_advanced_labels(limit: int = 5000) -> dict[str, int]:
         labels = list(
             db.scalars(
                 select(MlSnapshotLabel)
+                .options(selectinload(MlSnapshotLabel.feature_snapshot))
                 .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
-                .where(MlSnapshotLabel.is_labeled.is_(True))
+                .where(
+                    MlSnapshotLabel.is_labeled.is_(True),
+                    or_(
+                        MlSnapshotLabel.long_mfe_percent.is_(None),
+                        MlSnapshotLabel.long_mae_percent.is_(None),
+                        MlSnapshotLabel.short_mfe_percent.is_(None),
+                        MlSnapshotLabel.short_mae_percent.is_(None),
+                        MlSnapshotLabel.expected_long_return_percent.is_(None),
+                        MlSnapshotLabel.expected_short_return_percent.is_(None),
+                    ),
+                )
                 .order_by(MlSnapshotLabel.created_at)
                 .limit(limit)
             )

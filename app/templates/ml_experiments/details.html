@@ -31,6 +31,86 @@
     </dl>
   </section>
 
+  <section class="panel wide-panel mb-4">
+    <div class="section-heading">
+      <div>
+        <h2>Training Dataset Diagnostics</h2>
+        <div class="muted">Eligibility funnel captured when this experiment trained.</div>
+      </div>
+      {% if training_diagnostics.available %}
+        <span class="badge text-bg-secondary">Quality >= {{ training_diagnostics.diagnostics.data_quality_threshold }}</span>
+      {% endif %}
+    </div>
+    {% if training_diagnostics.available %}
+      {% set diag = training_diagnostics.diagnostics %}
+      <div class="readiness-grid compact-diagnostics-grid mb-3">
+        <div class="metric-card">
+          <div class="eyebrow">Feature snapshots</div>
+          <div class="metric-value">{{ diag.total_feature_snapshots }}</div>
+          <div class="muted">Database at training</div>
+        </div>
+        <div class="metric-card">
+          <div class="eyebrow">Selected horizon labels</div>
+          <div class="metric-value">{{ diag.total_labels_for_selected_horizon }}</div>
+          <div class="muted">{{ diag.horizon_seconds }}s horizon</div>
+        </div>
+        <div class="metric-card">
+          <div class="eyebrow">After quality filter</div>
+          <div class="metric-value">{{ diag.rows_after_data_quality_filter }}</div>
+          <div class="muted">Eligible label rows</div>
+        </div>
+        <div class="metric-card">
+          <div class="eyebrow">Final dataframe</div>
+          <div class="metric-value">{{ diag.final_dataframe_rows }}</div>
+          <div class="muted">Rows before 70/30 split</div>
+        </div>
+      </div>
+      <div class="table-responsive mb-3">
+        <table class="table table-dark align-middle data-table eligibility-table">
+          <thead>
+            <tr>
+              <th>Total snapshots</th>
+              <th>Total labels</th>
+              <th>Labeled labels</th>
+              <th>Labels joined</th>
+              <th>Labeled joined</th>
+              <th>Quality rows</th>
+              <th>Distinct snapshots</th>
+              <th>Duplicate labels</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ diag.total_feature_snapshots }}</td>
+              <td>{{ diag.total_labels_for_selected_horizon }}</td>
+              <td>{{ diag.labeled_labels_for_selected_horizon }}</td>
+              <td>{{ diag.labels_joined_to_feature_snapshots }}</td>
+              <td>{{ diag.labeled_labels_joined_to_feature_snapshots }}</td>
+              <td>{{ diag.rows_after_data_quality_filter }}</td>
+              <td>{{ diag.distinct_feature_snapshots_after_data_quality_filter }}</td>
+              <td>{{ diag.duplicate_label_rows_after_data_quality_filter }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <dl class="details-list wide">
+        <div><dt>Training min captured_at</dt><dd>{{ diag.training_min_captured_at or '-' }}</dd></div>
+        <div><dt>Training max captured_at</dt><dd>{{ diag.training_max_captured_at or '-' }}</dd></div>
+        <div><dt>Latest snapshot at training</dt><dd>{{ diag.latest_snapshot_captured_at_in_database or '-' }}</dd></div>
+        <div><dt>Latest snapshot now</dt><dd>{{ training_diagnostics.current_latest_snapshot_captured_at or '-' }}</dd></div>
+      </dl>
+      <div class="diagnostic-note mt-3">
+        <strong>Filters applied:</strong> {{ diag.filters_applied|join(', ') }}.
+        <strong>Not applied:</strong> {{ diag.filters_not_applied|join(', ') }}.
+      </div>
+    {% else %}
+      <div class="empty-state embedded">
+        <h2>Training diagnostics unavailable</h2>
+        <p>{{ training_diagnostics.error }}</p>
+      </div>
+    {% endif %}
+  </section>
+
   <section class="split-grid mb-4">
     <div class="panel wide-panel">
       <h2 class="mb-3">Class Metrics</h2>

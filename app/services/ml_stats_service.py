@@ -1,4 +1,6 @@
-from sqlalchemy import func, select
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import and_, func, or_, select
 
 from app.core.database import SessionLocal
 from app.models.exchange_credential import ExchangeCredential
@@ -9,6 +11,18 @@ from app.models.ml_feature_snapshot import MlFeatureSnapshot
 from app.models.ml_model import MlModel
 from app.models.ml_snapshot_label import MlSnapshotLabel
 from app.models.ml_training_session import MlTrainingSession
+
+
+def _pending_label_ready_filter(now: datetime):
+    return or_(
+        *(
+            and_(
+                MlSnapshotLabel.horizon_seconds == horizon,
+                MlFeatureSnapshot.captured_at <= now - timedelta(seconds=horizon),
+            )
+            for horizon in (10, 30, 60)
+        )
+    )
 
 
 def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10) -> dict:
@@ -24,6 +38,15 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
         pending_labels = db.scalar(
             select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(False))
         ) or 0
+        eligible_pending_labels = db.scalar(
+            select(func.count())
+            .select_from(MlSnapshotLabel)
+            .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+            .where(
+                MlSnapshotLabel.is_labeled.is_(False),
+                _pending_label_ready_filter(datetime.now(UTC)),
+            )
+        ) or 0
         labeled_labels = db.scalar(
             select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.is_labeled.is_(True))
         ) or 0
@@ -35,6 +58,21 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
                 MlSnapshotLabel.long_mae_percent.is_not(None),
                 MlSnapshotLabel.short_mfe_percent.is_not(None),
                 MlSnapshotLabel.short_mae_percent.is_not(None),
+            )
+        ) or 0
+        incomplete_advanced_labels = db.scalar(
+            select(func.count())
+            .select_from(MlSnapshotLabel)
+            .where(
+                MlSnapshotLabel.is_labeled.is_(True),
+                or_(
+                    MlSnapshotLabel.long_mfe_percent.is_(None),
+                    MlSnapshotLabel.long_mae_percent.is_(None),
+                    MlSnapshotLabel.short_mfe_percent.is_(None),
+                    MlSnapshotLabel.short_mae_percent.is_(None),
+                    MlSnapshotLabel.expected_long_return_percent.is_(None),
+                    MlSnapshotLabel.expected_short_return_percent.is_(None),
+                ),
             )
         ) or 0
         avg_long_mfe_30 = db.scalar(
@@ -150,8 +188,10 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
             "total_snapshots": total_snapshots,
             "total_labels": total_labels,
             "pending_labels": pending_labels,
+            "eligible_pending_labels": eligible_pending_labels,
             "labeled_labels": labeled_labels,
             "advanced_labels": advanced_labels,
+            "incomplete_advanced_labels": incomplete_advanced_labels,
             "avg_long_mfe_30": avg_long_mfe_30,
             "avg_long_mae_30": avg_long_mae_30,
             "avg_short_mfe_30": avg_short_mfe_30,

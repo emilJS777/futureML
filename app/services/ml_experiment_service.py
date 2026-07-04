@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
 from decimal import Decimal
+import logging
 from pathlib import Path
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import distinct, func, or_, select
 
 from app.core.database import SessionLocal
 from app.models.ml_experiment import MlExperiment
@@ -16,6 +17,7 @@ SUPPORTED_MODEL_TYPES = {"random_forest", "gradient_boosting"}
 PROBABILITY_THRESHOLDS = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.9]
 EXPERIMENT_HORIZONS = (10, 30, 60)
 MIN_EXPERIMENT_DATA_QUALITY_SCORE = 60
+logger = logging.getLogger(__name__)
 
 
 def _to_decimal(value: float | None) -> Decimal | None:
@@ -38,13 +40,104 @@ def _feature_null_filter():
     return or_(*(getattr(MlFeatureSnapshot, column).is_(None) for column in FEATURE_COLUMNS))
 
 
-def _build_horizon_eligibility(db, horizon: int, total_feature_snapshots: int) -> dict:
-    valid_label_conditions = (
-        MlSnapshotLabel.horizon_seconds == horizon,
+def _format_datetime(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _training_label_conditions(horizon_seconds: int) -> tuple:
+    return (
+        MlSnapshotLabel.horizon_seconds == horizon_seconds,
         MlSnapshotLabel.is_labeled.is_(True),
         MlSnapshotLabel.direction_label.is_not(None),
         MlSnapshotLabel.future_return_percent.is_not(None),
     )
+
+
+def _build_training_dataset_diagnostics(db, horizon_seconds: int, final_dataframe_rows: int | None = None) -> dict:
+    valid_label_conditions = _training_label_conditions(horizon_seconds)
+    joined_base = (
+        select(MlSnapshotLabel.id, MlFeatureSnapshot.id.label("feature_snapshot_id"))
+        .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+        .where(MlSnapshotLabel.horizon_seconds == horizon_seconds)
+        .subquery()
+    )
+    labeled_joined_base = (
+        select(MlSnapshotLabel.id, MlFeatureSnapshot.id.label("feature_snapshot_id"))
+        .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+        .where(*valid_label_conditions)
+        .subquery()
+    )
+    quality_base = (
+        select(
+            MlSnapshotLabel.id.label("label_id"),
+            MlFeatureSnapshot.id.label("feature_snapshot_id"),
+            MlFeatureSnapshot.captured_at,
+        )
+        .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
+        .where(
+            *valid_label_conditions,
+            MlFeatureSnapshot.data_quality_score >= MIN_EXPERIMENT_DATA_QUALITY_SCORE,
+        )
+        .subquery()
+    )
+    rows_after_quality = _count_query(db, select(func.count()).select_from(quality_base))
+    distinct_after_quality = _count_query(
+        db,
+        select(func.count(distinct(quality_base.c.feature_snapshot_id))).select_from(quality_base),
+    )
+    min_captured_at, max_captured_at = db.execute(
+        select(func.min(quality_base.c.captured_at), func.max(quality_base.c.captured_at))
+    ).one()
+    latest_snapshot_captured_at = db.scalar(select(func.max(MlFeatureSnapshot.captured_at)))
+    total_labels_for_horizon = _count_query(
+        db,
+        select(func.count()).select_from(MlSnapshotLabel).where(MlSnapshotLabel.horizon_seconds == horizon_seconds),
+    )
+    labeled_labels_for_horizon = _count_query(
+        db,
+        select(func.count()).select_from(MlSnapshotLabel).where(*valid_label_conditions),
+    )
+    labels_joined_to_feature_snapshots = _count_query(
+        db,
+        select(func.count()).select_from(joined_base),
+    )
+    labeled_labels_joined_to_feature_snapshots = _count_query(
+        db,
+        select(func.count()).select_from(labeled_joined_base),
+    )
+    diagnostics = {
+        "horizon_seconds": horizon_seconds,
+        "data_quality_threshold": MIN_EXPERIMENT_DATA_QUALITY_SCORE,
+        "total_feature_snapshots": _count_query(db, select(func.count()).select_from(MlFeatureSnapshot)),
+        "total_labels_for_selected_horizon": total_labels_for_horizon,
+        "labeled_labels_for_selected_horizon": labeled_labels_for_horizon,
+        "labels_joined_to_feature_snapshots": labels_joined_to_feature_snapshots,
+        "labeled_labels_joined_to_feature_snapshots": labeled_labels_joined_to_feature_snapshots,
+        "rows_after_data_quality_filter": rows_after_quality,
+        "distinct_feature_snapshots_after_data_quality_filter": distinct_after_quality,
+        "duplicate_label_rows_after_data_quality_filter": max(rows_after_quality - distinct_after_quality, 0),
+        "final_dataframe_rows": final_dataframe_rows if final_dataframe_rows is not None else rows_after_quality,
+        "training_min_captured_at": _format_datetime(min_captured_at),
+        "training_max_captured_at": _format_datetime(max_captured_at),
+        "latest_snapshot_captured_at_in_database": _format_datetime(latest_snapshot_captured_at),
+        "filters_applied": [
+            f"horizon_seconds == {horizon_seconds}",
+            "is_labeled == true",
+            "direction_label is not null",
+            "future_return_percent is not null",
+            f"data_quality_score >= {MIN_EXPERIMENT_DATA_QUALITY_SCORE}",
+        ],
+        "filters_not_applied": [
+            "no hardcoded row limit",
+            "no captured_at date range filter",
+            "no training_session_id/session filter",
+        ],
+    }
+    return diagnostics
+
+
+def _build_horizon_eligibility(db, horizon: int, total_feature_snapshots: int) -> dict:
+    valid_label_conditions = _training_label_conditions(horizon)
     labeled_rows = _count_query(
         db,
         select(func.count())
@@ -345,6 +438,41 @@ def get_probability_diagnostics(experiment_id: int) -> dict:
         db.close()
 
 
+def get_training_dataset_diagnostics(experiment_id: int) -> dict:
+    import joblib
+
+    db = SessionLocal()
+    try:
+        experiment = db.get(MlExperiment, experiment_id)
+        if experiment is None:
+            raise ValueError("Experiment was not found.")
+        if not experiment.model_path:
+            return {"available": False, "error": "Training diagnostics are available after model artifact creation."}
+
+        model_path = Path(experiment.model_path)
+        if not model_path.exists():
+            return {"available": False, "error": f"Model artifact is missing: {model_path}."}
+
+        artifact = joblib.load(model_path)
+        diagnostics = artifact.get("training_diagnostics")
+        if not diagnostics:
+            return {"available": False, "error": "This experiment artifact does not include training diagnostics."}
+
+        current_latest_snapshot = db.scalar(select(func.max(MlFeatureSnapshot.captured_at)))
+        return {
+            "available": True,
+            "diagnostics": diagnostics,
+            "current_latest_snapshot_captured_at": _format_datetime(current_latest_snapshot),
+        }
+    except Exception as exc:
+        return {
+            "available": False,
+            "error": str(exc)[:1000] or exc.__class__.__name__,
+        }
+    finally:
+        db.close()
+
+
 def train_direction_experiment(
     horizon_seconds: int = 30,
     model_type: str = "random_forest",
@@ -386,6 +514,28 @@ def train_direction_experiment(
         experiment.started_at = datetime.now(UTC)
         db.commit()
 
+        training_diagnostics = _build_training_dataset_diagnostics(db, horizon_seconds)
+        logger.info(
+            "ML experiment training dataset diagnostics: "
+            "horizon=%s total_feature_snapshots=%s total_labels_for_horizon=%s "
+            "labeled_labels_for_horizon=%s labels_joined_to_feature_snapshots=%s "
+            "labeled_labels_joined_to_feature_snapshots=%s rows_after_data_quality=%s "
+            "distinct_features_after_data_quality=%s duplicate_label_rows_after_data_quality=%s "
+            "training_min_captured_at=%s training_max_captured_at=%s latest_snapshot_captured_at=%s",
+            horizon_seconds,
+            training_diagnostics["total_feature_snapshots"],
+            training_diagnostics["total_labels_for_selected_horizon"],
+            training_diagnostics["labeled_labels_for_selected_horizon"],
+            training_diagnostics["labels_joined_to_feature_snapshots"],
+            training_diagnostics["labeled_labels_joined_to_feature_snapshots"],
+            training_diagnostics["rows_after_data_quality_filter"],
+            training_diagnostics["distinct_feature_snapshots_after_data_quality_filter"],
+            training_diagnostics["duplicate_label_rows_after_data_quality_filter"],
+            training_diagnostics["training_min_captured_at"],
+            training_diagnostics["training_max_captured_at"],
+            training_diagnostics["latest_snapshot_captured_at_in_database"],
+        )
+
         rows = list(
             db.execute(
                 select(MlFeatureSnapshot, MlSnapshotLabel)
@@ -394,7 +544,8 @@ def train_direction_experiment(
                     MlSnapshotLabel.horizon_seconds == horizon_seconds,
                     MlSnapshotLabel.is_labeled.is_(True),
                     MlSnapshotLabel.direction_label.is_not(None),
-                    MlFeatureSnapshot.data_quality_score >= 60,
+                    MlSnapshotLabel.future_return_percent.is_not(None),
+                    MlFeatureSnapshot.data_quality_score >= MIN_EXPERIMENT_DATA_QUALITY_SCORE,
                 )
                 .order_by(MlFeatureSnapshot.captured_at.asc(), MlFeatureSnapshot.id.asc())
             )
@@ -418,6 +569,20 @@ def train_direction_experiment(
             records.append(record)
 
         frame = pd.DataFrame(records)
+        training_diagnostics = _build_training_dataset_diagnostics(
+            db,
+            horizon_seconds,
+            final_dataframe_rows=len(frame),
+        )
+        logger.info(
+            "ML experiment final dataframe diagnostics: horizon=%s final_dataframe_rows=%s "
+            "training_min_captured_at=%s training_max_captured_at=%s latest_snapshot_captured_at=%s",
+            horizon_seconds,
+            training_diagnostics["final_dataframe_rows"],
+            training_diagnostics["training_min_captured_at"],
+            training_diagnostics["training_max_captured_at"],
+            training_diagnostics["latest_snapshot_captured_at_in_database"],
+        )
         feature_frame = (
             frame[FEATURE_COLUMNS]
             .apply(pd.to_numeric, errors="coerce")
@@ -478,6 +643,7 @@ def train_direction_experiment(
             "test_rows_count": len(x_test),
             "test_snapshot_ids": [int(value) for value in frame["snapshot_id"].iloc[split_index:].tolist()],
             "split_captured_at": frame["captured_at"].iloc[split_index].isoformat(),
+            "training_diagnostics": training_diagnostics,
         }
         joblib.dump(artifact, model_path)
 

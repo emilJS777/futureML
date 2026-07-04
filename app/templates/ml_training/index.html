@@ -54,6 +54,9 @@
       <form method="post" action="/ml-training/process-labels">
         <button class="btn btn-warning" type="submit">Process Labels</button>
       </form>
+      <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#backfillPendingLabelsModal">
+        Batch Backfill Pending Labels
+      </button>
       <button class="btn btn-outline-warning" type="button" data-bs-toggle="modal" data-bs-target="#backfillLabelsModal">
         Backfill Advanced Labels
       </button>
@@ -100,8 +103,10 @@
       <div><dt>Total feature snapshots</dt><dd>{{ stats.total_snapshots }}</dd></div>
       <div><dt>Total labels</dt><dd>{{ stats.total_labels }}</dd></div>
       <div><dt>Pending labels</dt><dd>{{ stats.pending_labels }}</dd></div>
+      <div><dt>Eligible pending labels</dt><dd>{{ stats.eligible_pending_labels }}</dd></div>
       <div><dt>Labeled snapshots</dt><dd>{{ stats.labeled_labels }}</dd></div>
       <div><dt>Labels with advanced TP/SL</dt><dd>{{ stats.advanced_labels }}</dd></div>
+      <div><dt>Incomplete advanced labels</dt><dd>{{ stats.incomplete_advanced_labels }}</dd></div>
       <div><dt>Avg long MFE 30s</dt><dd>{{ stats.avg_long_mfe_30|feature_value(6) }}</dd></div>
       <div><dt>Avg long MAE 30s</dt><dd>{{ stats.avg_long_mae_30|feature_value(6) }}</dd></div>
       <div><dt>Avg short MFE 30s</dt><dd>{{ stats.avg_short_mfe_30|feature_value(6) }}</dd></div>
@@ -363,6 +368,39 @@
       </div>
     </div>
   {% endfor %}
+
+  <div class="modal fade" id="backfillPendingLabelsModal" tabindex="-1" aria-labelledby="backfillPendingLabelsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <form method="post" action="/ml-training/backfill-pending-labels">
+          <div class="modal-header">
+            <h2 class="modal-title" id="backfillPendingLabelsModalLabel">Batch Backfill Pending Labels?</h2>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>This will process mature pending labels in batches and fill future return, direction, MFE/MAE, TP/SL, and expected return fields. It will not delete snapshots.</p>
+            <div class="row g-3">
+              <div class="col-sm-6">
+                <label class="form-label" for="pending_batch_size">Batch size</label>
+                <input class="form-control" id="pending_batch_size" name="batch_size" type="number" min="1" max="5000" value="1000" required>
+              </div>
+              <div class="col-sm-6">
+                <label class="form-label" for="pending_max_batches">Max batches</label>
+                <input class="form-control" id="pending_max_batches" name="max_batches" type="number" min="1" max="100" value="10" required>
+              </div>
+            </div>
+            <div class="diagnostic-note mt-3">
+              Current eligible pending labels: {{ stats.eligible_pending_labels }}. Total pending labels: {{ stats.pending_labels }}.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning">Run Batch Backfill</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 
   <div class="modal fade" id="backfillLabelsModal" tabindex="-1" aria-labelledby="backfillLabelsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

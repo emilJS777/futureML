@@ -8,7 +8,11 @@ from fastapi.templating import Jinja2Templates
 
 from app.core.ml_training_runner import capture_once_debug, start_ml_training_runner, stop_ml_training_runner
 from app.services.ml_dataset_cleanup_service import delete_ml_dataset
-from app.services.ml_labeling_service import backfill_advanced_labels, process_pending_labels
+from app.services.ml_labeling_service import (
+    backfill_advanced_labels,
+    backfill_pending_labels_in_batches,
+    process_pending_labels,
+)
 from app.services.ml_stats_service import get_ml_training_stats
 from app.services.ml_training_service import train_basic_direction_model
 
@@ -87,6 +91,21 @@ def backfill_labels():
     return _redirect_with_message(
         "success",
         f"Backfilled advanced labels for {result['updated']} rows; skipped {result['skipped']}.",
+    )
+
+
+@router.post("/ml-training/backfill-pending-labels")
+def backfill_pending_labels(
+    batch_size: int = Form(1000),
+    max_batches: int = Form(10),
+):
+    result = backfill_pending_labels_in_batches(batch_size=batch_size, max_batches=max_batches)
+    return _redirect_with_message(
+        "success" if result["processed"] else "warning",
+        "Pending label backfill: "
+        f"processed {result['processed']}, skipped {result['skipped']}, "
+        f"batches {result['batches_run']}, remaining pending {result['remaining_pending']}, "
+        f"eligible now {result['remaining_eligible_pending']}.",
     )
 
 
