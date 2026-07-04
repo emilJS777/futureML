@@ -100,12 +100,17 @@ def backfill_pending_labels(
     max_batches: int = Form(10),
 ):
     result = backfill_pending_labels_in_batches(batch_size=batch_size, max_batches=max_batches)
+    skip_breakdown = ", ".join(
+        f"{reason}={count}" for reason, count in result["skip_reasons"].items() if count
+    ) or "none"
     return _redirect_with_message(
         "success" if result["processed"] else "warning",
         "Pending label backfill: "
         f"processed {result['processed']}, skipped {result['skipped']}, "
         f"batches {result['batches_run']}, remaining pending {result['remaining_pending']}, "
-        f"eligible now {result['remaining_eligible_pending']}.",
+        f"eligible now {result['remaining_eligible_pending']}. "
+        f"Skip reasons: {skip_breakdown}. "
+        f"Safety {result['safety_seconds']}s, fallback tolerance {result['future_lookup_tolerance_seconds']}s.",
     )
 
 

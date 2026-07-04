@@ -28,6 +28,8 @@ class Settings:
     order_book_depth: int = int(os.getenv("ORDER_BOOK_DEPTH", "50"))
     label_long_threshold_percent: float = float(os.getenv("LABEL_LONG_THRESHOLD_PERCENT", "0.05"))
     label_short_threshold_percent: float = float(os.getenv("LABEL_SHORT_THRESHOLD_PERCENT", "0.05"))
+    label_backfill_safety_seconds: int = int(os.getenv("LABEL_BACKFILL_SAFETY_SECONDS", "120"))
+    label_future_lookup_tolerance_seconds: int = int(os.getenv("LABEL_FUTURE_LOOKUP_TOLERANCE_SECONDS", "300"))
     micro_candle_timeframe: str = os.getenv("MICRO_CANDLE_TIMEFRAME", "1m")
     micro_candle_limit: int = int(os.getenv("MICRO_CANDLE_LIMIT", "20"))
 

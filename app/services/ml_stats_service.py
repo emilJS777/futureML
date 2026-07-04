@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import and_, func, or_, select
 
 from app.core.database import SessionLocal
+from app.core.config import get_settings
 from app.models.exchange_credential import ExchangeCredential
 from app.models.exchange_market import ExchangeMarket
 from app.models.market_micro_candle import MarketMicroCandle
@@ -13,12 +14,12 @@ from app.models.ml_snapshot_label import MlSnapshotLabel
 from app.models.ml_training_session import MlTrainingSession
 
 
-def _pending_label_ready_filter(now: datetime):
+def _pending_label_ready_filter(now: datetime, safety_seconds: int):
     return or_(
         *(
             and_(
                 MlSnapshotLabel.horizon_seconds == horizon,
-                MlFeatureSnapshot.captured_at <= now - timedelta(seconds=horizon),
+                MlFeatureSnapshot.captured_at <= now - timedelta(seconds=horizon + safety_seconds),
             )
             for horizon in (10, 30, 60)
         )
@@ -30,6 +31,8 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
     try:
         snapshots_page_size = max(1, min(snapshots_page_size, 100))
         snapshots_page = max(1, snapshots_page)
+        settings = get_settings()
+        safety_seconds = max(0, int(settings.label_backfill_safety_seconds))
         total_snapshots = db.scalar(select(func.count()).select_from(MlFeatureSnapshot)) or 0
         total_snapshot_pages = max(1, (total_snapshots + snapshots_page_size - 1) // snapshots_page_size)
         snapshots_page = min(snapshots_page, total_snapshot_pages)
@@ -44,7 +47,7 @@ def get_ml_training_stats(snapshots_page: int = 1, snapshots_page_size: int = 10
             .join(MlFeatureSnapshot, MlFeatureSnapshot.id == MlSnapshotLabel.feature_snapshot_id)
             .where(
                 MlSnapshotLabel.is_labeled.is_(False),
-                _pending_label_ready_filter(datetime.now(UTC)),
+                _pending_label_ready_filter(datetime.now(UTC), safety_seconds),
             )
         ) or 0
         labeled_labels = db.scalar(
