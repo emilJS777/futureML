@@ -27,6 +27,7 @@
       <div><dt>Default confidence</dt><dd>{{ experiment.confidence_threshold|metric }}</dd></div>
       <div><dt>Accuracy</dt><dd>{{ experiment.accuracy|metric }}</dd></div>
       <div><dt>Started</dt><dd>{{ experiment.started_at or '-' }}</dd></div>
+      <div><dt>Heartbeat</dt><dd>{{ experiment.heartbeat_at or '-' }}</dd></div>
       <div><dt>Completed</dt><dd>{{ experiment.completed_at or '-' }}</dd></div>
     </dl>
   </section>

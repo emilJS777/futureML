@@ -30,6 +30,9 @@ class Settings:
     label_short_threshold_percent: float = float(os.getenv("LABEL_SHORT_THRESHOLD_PERCENT", "0.05"))
     label_backfill_safety_seconds: int = int(os.getenv("LABEL_BACKFILL_SAFETY_SECONDS", "120"))
     label_future_lookup_tolerance_seconds: int = int(os.getenv("LABEL_FUTURE_LOOKUP_TOLERANCE_SECONDS", "300"))
+    ml_experiment_stale_minutes: int = int(os.getenv("ML_EXPERIMENT_STALE_MINUTES", "30"))
+    ml_experiment_heartbeat_interval_seconds: int = int(os.getenv("ML_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS", "30"))
+    ml_experiment_heartbeat_timeout_seconds: int = int(os.getenv("ML_EXPERIMENT_HEARTBEAT_TIMEOUT_SECONDS", "300"))
     micro_candle_timeframe: str = os.getenv("MICRO_CANDLE_TIMEFRAME", "1m")
     micro_candle_limit: int = int(os.getenv("MICRO_CANDLE_LIMIT", "20"))
 

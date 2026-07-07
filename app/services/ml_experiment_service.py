@@ -1,10 +1,12 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import logging
 from pathlib import Path
+import threading
 
-from sqlalchemy import distinct, func, or_, select
+from sqlalchemy import and_, distinct, func, or_, select
 
+from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.ml_experiment import MlExperiment
 from app.models.ml_feature_snapshot import MlFeatureSnapshot
@@ -473,6 +475,69 @@ def get_training_dataset_diagnostics(experiment_id: int) -> dict:
         db.close()
 
 
+def _mark_experiment_heartbeat(experiment_id: int) -> None:
+    db = SessionLocal()
+    try:
+        experiment = db.get(MlExperiment, experiment_id)
+        if experiment is not None and experiment.status == "running":
+            experiment.heartbeat_at = datetime.now(UTC)
+            db.commit()
+    except Exception:
+        logger.exception("Failed to update ML experiment heartbeat. experiment_id=%s", experiment_id)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def _experiment_heartbeat_loop(experiment_id: int, stop_event: threading.Event, interval_seconds: int) -> None:
+    interval_seconds = max(1, interval_seconds)
+    while not stop_event.wait(interval_seconds):
+        _mark_experiment_heartbeat(experiment_id)
+
+
+def fail_stale_running_experiments() -> int:
+    settings = get_settings()
+    now = datetime.now(UTC)
+    started_cutoff = now - timedelta(minutes=max(1, settings.ml_experiment_stale_minutes))
+    heartbeat_cutoff = now - timedelta(seconds=max(1, settings.ml_experiment_heartbeat_timeout_seconds))
+    db = SessionLocal()
+    failed_count = 0
+    try:
+        stale_experiments = list(
+            db.scalars(
+                select(MlExperiment).where(
+                    MlExperiment.status == "running",
+                    or_(
+                        MlExperiment.started_at <= started_cutoff,
+                        and_(
+                            MlExperiment.heartbeat_at.is_not(None),
+                            MlExperiment.heartbeat_at <= heartbeat_cutoff,
+                        ),
+                        and_(
+                            MlExperiment.heartbeat_at.is_(None),
+                            MlExperiment.started_at <= started_cutoff,
+                        ),
+                    ),
+                )
+            )
+        )
+        for experiment in stale_experiments:
+            experiment.status = "failed"
+            experiment.error_message = "Training interrupted (server restart or worker terminated)"
+            experiment.completed_at = now
+            failed_count += 1
+        if failed_count:
+            db.commit()
+            logger.warning("Marked %s stale ML experiment(s) as failed.", failed_count)
+        return failed_count
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to mark stale ML experiments.")
+        raise
+    finally:
+        db.close()
+
+
 def _validate_experiment_request(
     horizon_seconds: int = 30,
     model_type: str = "random_forest",
@@ -530,6 +595,9 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
     horizon_seconds = experiment.horizon_seconds
     model_type = experiment.model_type
     min_rows = experiment.min_rows
+    settings = get_settings()
+    heartbeat_stop_event = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
 
     try:
         import joblib
@@ -540,7 +608,18 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
 
         experiment.status = "running"
         experiment.started_at = datetime.now(UTC)
+        experiment.heartbeat_at = experiment.started_at
         db.commit()
+        heartbeat_thread = threading.Thread(
+            target=_experiment_heartbeat_loop,
+            args=(
+                experiment_id,
+                heartbeat_stop_event,
+                settings.ml_experiment_heartbeat_interval_seconds,
+            ),
+            daemon=True,
+        )
+        heartbeat_thread.start()
 
         training_diagnostics = _build_training_dataset_diagnostics(db, horizon_seconds)
         logger.info(
@@ -703,6 +782,9 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
         db.refresh(experiment)
         return {"success": False, "message": experiment.error_message, "experiment": experiment}
     finally:
+        heartbeat_stop_event.set()
+        if heartbeat_thread and heartbeat_thread.is_alive():
+            heartbeat_thread.join(timeout=5)
         db.close()
 
 

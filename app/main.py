@@ -13,18 +13,30 @@ from app.controllers.exchange_controller import router as exchange_router
 from app.controllers.market_data_controller import router as market_data_router
 from app.controllers.ml_experiment_controller import router as ml_experiment_router
 from app.controllers.ml_training_controller import router as ml_training_router
+from app.services.ml_experiment_service import fail_stale_running_experiments
 
 
 logger = logging.getLogger(__name__)
 
 
+async def ml_experiment_stale_monitor_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        await asyncio.to_thread(fail_stale_running_experiments)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     collector_task: asyncio.Task | None = None
+    stale_monitor_task: asyncio.Task | None = None
     try:
         logger.info("Running startup database tasks.")
         run_startup_database_tasks()
         logger.info("Startup database tasks completed.")
+        failed_stale_count = fail_stale_running_experiments()
+        if failed_stale_count:
+            logger.warning("Failed %s stale ML experiment(s) during startup.", failed_stale_count)
+        stale_monitor_task = asyncio.create_task(ml_experiment_stale_monitor_loop())
         if get_settings().market_data_auto_collect:
             collector_task = asyncio.create_task(market_data_collection_loop())
         else:
@@ -36,6 +48,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if stale_monitor_task:
+            stale_monitor_task.cancel()
+            try:
+                await stale_monitor_task
+            except asyncio.CancelledError:
+                pass
         if collector_task:
             collector_task.cancel()
             try:
