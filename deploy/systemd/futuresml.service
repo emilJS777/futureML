@@ -1,0 +1,14 @@
+[Unit]
+Description=FuturesML FastAPI web service
+After=network.target postgresql.service
+
+[Service]
+WorkingDirectory=/root/FuturesML
+EnvironmentFile=/root/FuturesML/.env
+ExecStart=/root/FuturesML/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target

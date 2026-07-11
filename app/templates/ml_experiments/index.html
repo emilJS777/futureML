@@ -149,6 +149,7 @@
               <th>Model</th>
               <th>Horizon</th>
               <th>Status</th>
+              <th>Stage</th>
               <th>Rows</th>
               <th>Accuracy</th>
               <th>Precision long</th>
@@ -173,6 +174,7 @@
                   {% set status_color = 'success' if experiment.status == 'completed' else 'danger' if experiment.status == 'failed' else 'warning' %}
                   <span class="badge text-bg-{{ status_color }}">{{ experiment.status }}</span>
                 </td>
+                <td>{{ experiment.progress_stage or '-' }}</td>
                 <td>{{ experiment.train_rows_count or 0 }} / {{ experiment.test_rows_count or 0 }}</td>
                 <td>{{ experiment.accuracy|metric }}</td>
                 <td>{{ experiment.precision_long|metric }}</td>

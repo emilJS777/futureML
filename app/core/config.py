@@ -33,6 +33,9 @@ class Settings:
     ml_experiment_stale_minutes: int = int(os.getenv("ML_EXPERIMENT_STALE_MINUTES", "30"))
     ml_experiment_heartbeat_interval_seconds: int = int(os.getenv("ML_EXPERIMENT_HEARTBEAT_INTERVAL_SECONDS", "30"))
     ml_experiment_heartbeat_timeout_seconds: int = int(os.getenv("ML_EXPERIMENT_HEARTBEAT_TIMEOUT_SECONDS", "300"))
+    ml_experiment_worker_poll_seconds: int = int(os.getenv("ML_EXPERIMENT_WORKER_POLL_SECONDS", "5"))
+    ml_random_forest_n_jobs: int = int(os.getenv("ML_RANDOM_FOREST_N_JOBS", "1"))
+    ml_random_forest_n_estimators: int = int(os.getenv("ML_RANDOM_FOREST_N_ESTIMATORS", "300"))
     micro_candle_timeframe: str = os.getenv("MICRO_CANDLE_TIMEFRAME", "1m")
     micro_candle_limit: int = int(os.getenv("MICRO_CANDLE_LIMIT", "20"))
 

@@ -18,6 +18,7 @@ class MlExperiment(Base):
     )
     title: Mapped[str] = mapped_column(String(160), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    progress_stage: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     model_type: Mapped[str] = mapped_column(String(80), nullable=False)
     target_type: Mapped[str] = mapped_column(String(80), nullable=False, default="direction_label")
     horizon_seconds: Mapped[int] = mapped_column(Integer, nullable=False, index=True)

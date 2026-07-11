@@ -489,6 +489,13 @@ def _mark_experiment_heartbeat(experiment_id: int) -> None:
         db.close()
 
 
+def _set_experiment_stage(db, experiment: MlExperiment, stage: str) -> None:
+    experiment.progress_stage = stage
+    experiment.heartbeat_at = datetime.now(UTC)
+    db.commit()
+    logger.info("ML experiment stage changed. experiment_id=%s stage=%s", experiment.id, stage)
+
+
 def _experiment_heartbeat_loop(experiment_id: int, stop_event: threading.Event, interval_seconds: int) -> None:
     interval_seconds = max(1, interval_seconds)
     while not stop_event.wait(interval_seconds):
@@ -508,7 +515,6 @@ def fail_stale_running_experiments() -> int:
                 select(MlExperiment).where(
                     MlExperiment.status == "running",
                     or_(
-                        MlExperiment.started_at <= started_cutoff,
                         and_(
                             MlExperiment.heartbeat_at.is_not(None),
                             MlExperiment.heartbeat_at <= heartbeat_cutoff,
@@ -524,6 +530,7 @@ def fail_stale_running_experiments() -> int:
         for experiment in stale_experiments:
             experiment.status = "failed"
             experiment.error_message = "Training interrupted (server restart or worker terminated)"
+            experiment.progress_stage = "failed"
             experiment.completed_at = now
             failed_count += 1
         if failed_count:
@@ -567,6 +574,7 @@ def create_pending_direction_experiment(
         experiment = MlExperiment(
             title=(title or f"Direction experiment {horizon_seconds}s").strip()[:160],
             status="pending",
+            progress_stage="pending",
             model_type=model_type,
             target_type="direction_label",
             horizon_seconds=horizon_seconds,
@@ -580,6 +588,38 @@ def create_pending_direction_experiment(
         return experiment
     except Exception:
         db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def claim_next_pending_experiment() -> int | None:
+    db = SessionLocal()
+    try:
+        experiment = db.scalar(
+            select(MlExperiment)
+            .where(MlExperiment.status == "pending")
+            .order_by(MlExperiment.created_at.asc(), MlExperiment.id.asc())
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        )
+        if experiment is None:
+            db.rollback()
+            return None
+
+        now = datetime.now(UTC)
+        experiment.status = "running"
+        experiment.progress_stage = "loading_data"
+        experiment.started_at = now
+        experiment.heartbeat_at = now
+        experiment.completed_at = None
+        experiment.error_message = None
+        db.commit()
+        logger.info("Claimed ML experiment for worker training. experiment_id=%s", experiment.id)
+        return experiment.id
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to claim pending ML experiment.")
         raise
     finally:
         db.close()
@@ -606,9 +646,18 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
         from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
         from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
+        if experiment.status not in {"pending", "running"}:
+            message = f"Experiment is not trainable from status={experiment.status}."
+            logger.warning("ML experiment training skipped. experiment_id=%s %s", experiment_id, message)
+            return {"success": False, "message": message, "experiment": experiment}
+
+        now = datetime.now(UTC)
         experiment.status = "running"
-        experiment.started_at = datetime.now(UTC)
-        experiment.heartbeat_at = experiment.started_at
+        experiment.started_at = experiment.started_at or now
+        experiment.heartbeat_at = now
+        experiment.progress_stage = "loading_data"
+        experiment.completed_at = None
+        experiment.error_message = None
         db.commit()
         heartbeat_thread = threading.Thread(
             target=_experiment_heartbeat_loop,
@@ -621,6 +670,7 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
         )
         heartbeat_thread.start()
 
+        _set_experiment_stage(db, experiment, "loading_data")
         training_diagnostics = _build_training_dataset_diagnostics(db, horizon_seconds)
         logger.info(
             "ML experiment training dataset diagnostics: "
@@ -663,6 +713,7 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
                 f"for horizon {horizon_seconds}s; found {len(rows)}."
             )
 
+        _set_experiment_stage(db, experiment, "preparing_dataframe")
         records = []
         for snapshot, label in rows:
             record = {column: getattr(snapshot, column) for column in FEATURE_COLUMNS}
@@ -676,6 +727,14 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
             records.append(record)
 
         frame = pd.DataFrame(records)
+        frame_memory_mb = frame.memory_usage(deep=True).sum() / 1024 / 1024 if not frame.empty else 0
+        logger.info(
+            "ML experiment dataframe prepared. experiment_id=%s rows=%s columns=%s memory_mb=%.2f",
+            experiment_id,
+            len(frame),
+            len(frame.columns),
+            frame_memory_mb,
+        )
         training_diagnostics = _build_training_dataset_diagnostics(
             db,
             horizon_seconds,
@@ -696,6 +755,14 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
             .replace([np.inf, -np.inf], np.nan)
             .fillna(0)
         )
+        feature_memory_mb = feature_frame.memory_usage(deep=True).sum() / 1024 / 1024 if not feature_frame.empty else 0
+        logger.info(
+            "ML experiment feature dataframe ready. experiment_id=%s rows=%s features=%s memory_mb=%.2f",
+            experiment_id,
+            len(feature_frame),
+            len(FEATURE_COLUMNS),
+            feature_memory_mb,
+        )
         split_index = int(len(frame) * 0.7)
         if split_index <= 0 or split_index >= len(frame):
             raise ValueError("Not enough rows to create a chronological 70/30 train/test split.")
@@ -707,11 +774,12 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
         if y_train.nunique() < 2:
             raise ValueError("Training portion must contain at least two direction classes.")
 
+        _set_experiment_stage(db, experiment, "training_model")
         if model_type == "random_forest":
             classifier = RandomForestClassifier(
-                n_estimators=300,
+                n_estimators=max(1, settings.ml_random_forest_n_estimators),
                 random_state=42,
-                n_jobs=-1,
+                n_jobs=max(1, settings.ml_random_forest_n_jobs),
                 class_weight="balanced",
                 min_samples_leaf=2,
             )
@@ -719,6 +787,7 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
             classifier = GradientBoostingClassifier(random_state=42)
 
         classifier.fit(x_train, y_train)
+        _set_experiment_stage(db, experiment, "evaluating")
         predictions = classifier.predict(x_test)
         accuracy = float(accuracy_score(y_test, predictions))
         report = classification_report(
@@ -738,6 +807,7 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
             reverse=True,
         )
 
+        _set_experiment_stage(db, experiment, "saving_model")
         model_dir = Path("storage/models/experiments")
         model_dir.mkdir(parents=True, exist_ok=True)
         model_path = model_dir / f"{experiment.public_id}.joblib"
@@ -763,6 +833,7 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
         experiment.classification_report_json = report
         experiment.model_path = str(model_path)
         experiment.error_message = None
+        experiment.progress_stage = "completed"
         experiment.completed_at = datetime.now(UTC)
         _set_class_metrics(experiment, report)
         db.commit()
@@ -777,6 +848,7 @@ def run_direction_experiment_training(experiment_id: int) -> dict[str, object]:
         experiment = db.get(MlExperiment, experiment.id)
         experiment.status = "failed"
         experiment.error_message = str(exc)[:4000] or exc.__class__.__name__
+        experiment.progress_stage = "failed"
         experiment.completed_at = datetime.now(UTC)
         db.commit()
         db.refresh(experiment)
