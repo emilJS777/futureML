@@ -507,6 +507,7 @@ def fail_stale_running_experiments() -> int:
     now = datetime.now(UTC)
     started_cutoff = now - timedelta(minutes=max(1, settings.ml_experiment_stale_minutes))
     heartbeat_cutoff = now - timedelta(seconds=max(1, settings.ml_experiment_heartbeat_timeout_seconds))
+    max_runtime_cutoff = now - timedelta(hours=max(1, settings.ml_experiment_max_runtime_hours))
     db = SessionLocal()
     failed_count = 0
     try:
@@ -523,13 +524,17 @@ def fail_stale_running_experiments() -> int:
                             MlExperiment.heartbeat_at.is_(None),
                             MlExperiment.started_at <= started_cutoff,
                         ),
+                        MlExperiment.started_at <= max_runtime_cutoff,
                     ),
                 )
             )
         )
         for experiment in stale_experiments:
             experiment.status = "failed"
-            experiment.error_message = "Training interrupted (server restart or worker terminated)"
+            if experiment.started_at and experiment.started_at <= max_runtime_cutoff:
+                experiment.error_message = "Training exceeded maximum runtime"
+            else:
+                experiment.error_message = "Training interrupted (server restart or worker terminated)"
             experiment.progress_stage = "failed"
             experiment.completed_at = now
             failed_count += 1
